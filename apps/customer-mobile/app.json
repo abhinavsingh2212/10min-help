@@ -1,0 +1,35 @@
+{
+  "expo": {
+    "name": "10Min Help Customer",
+    "slug": "10min-help-customer",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "tenminhelp",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#F59E0B"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.tenminhelp.customer",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "10Min Help requires your location to dispatch nearby mechanics to your exact breakdown location."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#F59E0B"
+      },
+      "package": "com.tenminhelp.customer",
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ]
+    },
+    "plugins": [
+      "expo-router"
+    ]
+  }
+}

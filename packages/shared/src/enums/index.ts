@@ -1,0 +1,64 @@
+export enum UserRole {
+  CUSTOMER = 'CUSTOMER',
+  TECHNICIAN = 'TECHNICIAN',
+  ADMIN = 'ADMIN',
+  DISPATCHER = 'DISPATCHER',
+}
+
+export enum VehicleType {
+  BIKE = 'BIKE',
+  CAR = 'CAR',
+}
+
+export enum BookingStatus {
+  REQUESTED = 'REQUESTED',
+  SEARCHING = 'SEARCHING',
+  ASSIGNED = 'ASSIGNED',
+  EN_ROUTE = 'EN_ROUTE',
+  ARRIVED = 'ARRIVED',
+  INSPECTING = 'INSPECTING',
+  AWAITING_CUSTOMER_APPROVAL = 'AWAITING_CUSTOMER_APPROVAL',
+  IN_PROGRESS = 'IN_PROGRESS',
+  COMPLETED = 'COMPLETED',
+  CANCELLED = 'CANCELLED',
+  UNFULFILLED = 'UNFULFILLED',
+}
+
+export enum TechnicianVerificationStatus {
+  PENDING = 'PENDING',
+  VERIFIED = 'VERIFIED',
+  REJECTED = 'REJECTED',
+  SUSPENDED = 'SUSPENDED',
+}
+
+export enum DispatchOfferStatus {
+  PENDING = 'PENDING',
+  ACCEPTED = 'ACCEPTED',
+  REJECTED = 'REJECTED',
+  EXPIRED = 'EXPIRED',
+}
+
+export enum PaymentStatus {
+  PENDING = 'PENDING',
+  PAID = 'PAID',
+  FAILED = 'FAILED',
+  REFUNDED = 'REFUNDED',
+}
+
+export enum PaymentMethod {
+  UPI = 'UPI',
+  CARD = 'CARD',
+  NETBANKING = 'NETBANKING',
+  CASH = 'CASH',
+}
+
+export enum ServiceCategory {
+  PUNCTURE = 'PUNCTURE',
+  BATTERY = 'BATTERY',
+  NOT_STARTING = 'NOT_STARTING',
+  FUEL = 'FUEL',
+  LOCKOUT = 'LOCKOUT',
+  MINOR_REPAIR = 'MINOR_REPAIR',
+  TYRE_CHANGE = 'TYRE_CHANGE',
+  TOWING = 'TOWING',
+}

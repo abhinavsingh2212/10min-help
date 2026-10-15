@@ -1,0 +1,35 @@
+{
+  "expo": {
+    "name": "10Min Help Partner",
+    "slug": "10min-help-partner",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "tenminhelppartner",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#0F172A"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.tenminhelp.partner",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "10Min Help Partner requires your foreground location to calculate customer distance and provide turn-by-turn navigation."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0F172A"
+      },
+      "package": "com.tenminhelp.partner",
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ]
+    },
+    "plugins": [
+      "expo-router"
+    ]
+  }
+}

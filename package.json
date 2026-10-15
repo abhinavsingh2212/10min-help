@@ -1,0 +1,33 @@
+{
+  "name": "10min-help-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "10Min Help — On-demand emergency roadside vehicle assistance platform",
+  "workspaces": [
+    "packages/*",
+    "backend",
+    "apps/*"
+  ],
+  "scripts": {
+    "build:shared": "npm run build --workspace=@10min-help/shared",
+    "build:backend": "npm run build --workspace=@10min-help/backend",
+    "build:customer-web": "npm run build --workspace=@10min-help/customer-web",
+    "build:admin-web": "npm run build --workspace=@10min-help/admin-web",
+    "build": "npm run build:shared && npm run build:backend",
+    "dev:backend": "npm run dev --workspace=@10min-help/backend",
+    "dev:customer-web": "npm run dev --workspace=@10min-help/customer-web",
+    "dev:admin-web": "npm run dev --workspace=@10min-help/admin-web",
+    "dev:customer-mobile": "npm run dev --workspace=@10min-help/customer-mobile",
+    "dev:mechanic-mobile": "npm run dev --workspace=@10min-help/mechanic-mobile",
+    "seed": "npm run seed --workspace=@10min-help/backend",
+    "test": "npm run test --workspace=@10min-help/backend",
+    "test:all": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
