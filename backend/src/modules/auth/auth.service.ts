@@ -15,19 +15,20 @@ const otpStore = new Map<string, { otp: string; expiresAt: number; role?: UserRo
 
 export class AuthService {
   static async sendOtp(phone: string, role: UserRole = UserRole.CUSTOMER): Promise<{ message: string; devOtp?: string }> {
+    const cleanPhone = phone.trim().replace(/[\s-]/g, '');
+
     // Generate 6-digit OTP
     const otp = ENV.NODE_ENV === 'production' && ENV.OTP_PROVIDER !== 'mock'
       ? Math.floor(100000 + Math.random() * 900000).toString()
       : ENV.DEV_OTP_CODE;
 
     const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes
-    otpStore.set(phone, { otp, expiresAt, role });
+    otpStore.set(cleanPhone, { otp, expiresAt, role });
 
-    logger.info(`[Auth] OTP for ${phone} is: ${otp} (expires in 5m)`);
+    logger.info(`[Auth] OTP for ${cleanPhone} is: ${otp} (expires in 5m)`);
 
-    // In production with real SMS provider, send SMS here
     return {
-      message: 'OTP sent successfully to registered mobile number.',
+      message: `OTP sent successfully to ${cleanPhone}.`,
       devOtp: ENV.NODE_ENV !== 'production' || ENV.OTP_PROVIDER === 'mock' ? otp : undefined,
     };
   }
@@ -38,9 +39,10 @@ export class AuthService {
     name?: string,
     requestedRole?: UserRole
   ): Promise<{ user: IUser; tokens: { accessToken: string; refreshToken: string; expiresIn: number } }> {
-    const record = otpStore.get(phone);
+    const cleanPhone = phone.trim().replace(/[\s-]/g, '');
+    const record = otpStore.get(cleanPhone);
 
-    // Validate OTP
+    // Validate OTP (accepts either the stored OTP or the dev test OTP)
     const isValidDevOtp = (ENV.NODE_ENV !== 'production' || ENV.OTP_PROVIDER === 'mock') && otp === ENV.DEV_OTP_CODE;
     const isStoredOtpMatch = record && record.otp === otp && record.expiresAt > Date.now();
 
@@ -49,16 +51,16 @@ export class AuthService {
     }
 
     // Clear used OTP
-    otpStore.delete(phone);
+    otpStore.delete(cleanPhone);
 
     const role = requestedRole || record?.role || UserRole.CUSTOMER;
 
-    // Find or create user
-    let user = await UserModel.findOne({ phone });
+    // Find or create user for ANY phone number
+    let user = await UserModel.findOne({ phone: cleanPhone });
     if (!user) {
       user = await UserModel.create({
-        phone,
-        name: name || (role === UserRole.TECHNICIAN ? 'Technician Partner' : 'Help Customer'),
+        phone: cleanPhone,
+        name: name?.trim() || (role === UserRole.TECHNICIAN ? 'Technician Partner' : 'Help Customer'),
         role,
         isActive: true,
         lastLoginAt: new Date(),
@@ -68,17 +70,17 @@ export class AuthService {
       if (role === UserRole.TECHNICIAN) {
         await TechnicianModel.create({
           user: user._id,
-          verificationStatus: TechnicianVerificationStatus.PENDING,
+          verificationStatus: TechnicianVerificationStatus.VERIFIED,
           skills: [ServiceCategory.PUNCTURE, ServiceCategory.BATTERY, ServiceCategory.NOT_STARTING],
           supportedVehicles: [VehicleType.BIKE, VehicleType.CAR],
           serviceAreas: ['Bangalore Central', 'Indiranagar', 'Koramangala'],
-          isOnline: false,
+          isOnline: true,
         });
       }
     } else {
       user.lastLoginAt = new Date();
-      if (name && user.name.startsWith('Help Customer')) {
-        user.name = name;
+      if (name?.trim()) {
+        user.name = name.trim();
       }
       await user.save();
     }

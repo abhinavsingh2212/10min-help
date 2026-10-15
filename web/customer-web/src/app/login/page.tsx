@@ -8,7 +8,7 @@ import { authApi, setStoredToken } from '../../lib/api';
 export default function LoginPage() {
   const router = useRouter();
   const [step, setStep] = useState<'PHONE' | 'OTP'>('PHONE');
-  const [phone, setPhone] = useState('9876543210');
+  const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
@@ -107,7 +107,20 @@ export default function LoginPage() {
           <form onSubmit={handleSendOtp} className="space-y-4">
             <div>
               <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
-                Mobile Number
+                Your Full Name (Optional)
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. Abhinav Singh"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-brand-500 focus:bg-white"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+                Mobile Number *
               </label>
               <div className="relative">
                 <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-sm font-bold text-gray-500">

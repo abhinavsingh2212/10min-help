@@ -8,8 +8,8 @@ import {
   VehicleType,
 } from '../enums';
 
-// Phone regex: 10 digits Indian phone number or prefixed with +91
-const phoneRegex = /^(\+91)?[6-9]\d{9}$/;
+// Phone regex: accepts any standard 10-15 digit phone number (with optional '+' country prefix)
+const phoneRegex = /^\+?[0-9]{7,15}$/;
 
 export const sendOtpSchema = z.object({
   phone: z.string().regex(phoneRegex, 'Please enter a valid 10-digit Indian phone number'),
