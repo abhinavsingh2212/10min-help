@@ -15,7 +15,9 @@ router.use(authMiddleware);
 router.use(requireRole(UserRole.ADMIN, UserRole.DISPATCHER));
 
 router.get('/metrics', AdminController.getMetrics);
+router.get('/kpis', AdminController.getMetrics);
 router.get('/live-map', AdminController.getLiveMap);
+router.get('/radar', AdminController.getLiveMap);
 router.get('/bookings', AdminController.listBookings);
 router.post('/bookings/:bookingId/assign', validateBody(adminAssignBookingSchema), AdminController.manualAssign);
 router.get('/technicians', AdminController.listTechnicians);

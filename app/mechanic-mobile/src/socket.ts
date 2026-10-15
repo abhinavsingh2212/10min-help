@@ -1,11 +1,25 @@
 import { io, Socket } from 'socket.io-client';
+import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 import { getMechanicToken } from './api';
+
+export function getSocketBaseUrl(): string {
+  const host = Constants.expoConfig?.hostUri?.split(':')[0];
+  if (host && host !== 'localhost') {
+    return `http://${host}:5001`;
+  }
+  if (Platform.OS === 'android') {
+    return 'http://10.0.2.2:5001';
+  }
+  return 'http://localhost:5001';
+}
 
 let socket: Socket | null = null;
 
 export function getMechanicSocket(): Socket {
   if (!socket) {
-    socket = io('http://localhost:5001', {
+    const url = getSocketBaseUrl();
+    socket = io(url, {
       auth: { token: getMechanicToken() },
       transports: ['websocket'],
     });

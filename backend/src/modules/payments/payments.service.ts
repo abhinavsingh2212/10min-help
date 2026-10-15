@@ -48,10 +48,18 @@ export class PaymentsService {
     providerPaymentId: string,
     signature: string
   ): Promise<IPayment> {
-    const payment = await PaymentModel.findOne({
+    let payment = await PaymentModel.findOne({
       booking: bookingId,
       providerOrderId,
     });
+
+    if (!payment) {
+      // Fallback: find latest pending payment for this booking
+      payment = await PaymentModel.findOne({
+        booking: bookingId,
+        status: PaymentStatus.PENDING,
+      }).sort({ createdAt: -1 });
+    }
 
     if (!payment) throw new Error('Payment record not found for this order.');
 

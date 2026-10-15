@@ -132,6 +132,7 @@ export class AdminService {
 
     return {
       onlineTechnicians,
+      technicians: onlineTechnicians,
       activeBookings,
       timestamp: new Date().toISOString(),
     };

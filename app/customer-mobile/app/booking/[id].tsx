@@ -59,15 +59,16 @@ export default function BookingTrackingScreen() {
 
   const handlePay = async () => {
     try {
-      await mobileApi('/payments/orders', {
+      const orderRes = await mobileApi('/payments/orders', {
         method: 'POST',
         body: JSON.stringify({ bookingId: id, method: 'UPI' }),
       });
+      const orderId = orderRes.data?.orderId || orderRes.data?.providerOrderId || `order_${Date.now()}`;
       await mobileApi('/payments/verify', {
         method: 'POST',
         body: JSON.stringify({
           bookingId: id,
-          providerOrderId: `order_${Date.now()}`,
+          providerOrderId: orderId,
           providerPaymentId: `pay_${Date.now()}`,
           signature: 'valid_mock_signature',
         }),

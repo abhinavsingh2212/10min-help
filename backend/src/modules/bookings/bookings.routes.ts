@@ -33,6 +33,12 @@ router.post(
   BookingsController.respondQuote
 );
 router.post(
+  '/:id/approve-quote',
+  requireRole(UserRole.CUSTOMER),
+  validateBody(quoteApprovalSchema),
+  BookingsController.respondQuote
+);
+router.post(
   '/:id/status',
   requireRole(UserRole.TECHNICIAN),
   validateBody(technicianJobStatusSchema),
