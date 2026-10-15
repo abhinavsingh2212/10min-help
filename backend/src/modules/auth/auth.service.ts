@@ -14,6 +14,7 @@ import {
   generateRefreshToken,
   verifyRefreshToken,
   hashToken,
+  generateSecureOtp,
   TokenPayload,
 } from '../../utils/crypto';
 import { logger } from '../../config/logger';
@@ -75,9 +76,7 @@ export class AuthService {
     }
 
     const isMockMode = ENV.NODE_ENV !== 'production' && ENV.OTP_PROVIDER === 'mock';
-    const otp = isMockMode
-      ? ENV.DEV_OTP_CODE
-      : Math.floor(100000 + Math.random() * 900000).toString();
+    const otp = isMockMode ? ENV.DEV_OTP_CODE : generateSecureOtp();
 
     const expiresAt = now + 5 * 60 * 1000; // 5 minutes
     otpStore.set(cleanPhone, {
@@ -107,28 +106,41 @@ export class AuthService {
     const cleanPhone = normalizePhoneNumber(phone);
     const record = otpStore.get(cleanPhone);
 
-    const isMockMode = ENV.NODE_ENV !== 'production' && ENV.OTP_PROVIDER === 'mock';
-    const isValidDevOtp = isMockMode && otp === ENV.DEV_OTP_CODE && (!record || record.expiresAt > Date.now());
-    const isStoredOtpMatch = Boolean(record && record.otp === otp && record.expiresAt > Date.now());
+    if (!record) {
+      const err: any = new Error('No active OTP request found for this phone number. Please request a verification code first.');
+      err.statusCode = 400;
+      err.code = 'NO_OTP_REQUEST';
+      throw err;
+    }
 
-    if (!isValidDevOtp && !isStoredOtpMatch) {
-      if (record) {
-        record.attempts += 1;
-        if (record.attempts >= MAX_OTP_VERIFY_ATTEMPTS) {
-          otpStore.delete(cleanPhone);
-          const err: any = new Error('Maximum OTP verification attempts exceeded. Please request a new code.');
-          err.statusCode = 429;
-          err.code = 'MAX_ATTEMPTS_EXCEEDED';
-          throw err;
-        }
+    if (Date.now() > record.expiresAt) {
+      otpStore.delete(cleanPhone);
+      const err: any = new Error('OTP has expired. Please request a new verification code.');
+      err.statusCode = 400;
+      err.code = 'OTP_EXPIRED';
+      throw err;
+    }
+
+    const isMockMode = ENV.NODE_ENV !== 'production' && ENV.OTP_PROVIDER === 'mock';
+    const isMatch = (isMockMode && otp === ENV.DEV_OTP_CODE) || record.otp === otp;
+
+    if (!isMatch) {
+      record.attempts += 1;
+      if (record.attempts >= MAX_OTP_VERIFY_ATTEMPTS) {
+        otpStore.delete(cleanPhone);
+        const err: any = new Error('Maximum OTP verification attempts exceeded. Please request a new code.');
+        err.statusCode = 429;
+        err.code = 'MAX_ATTEMPTS_EXCEEDED';
+        throw err;
       }
-      const err: any = new Error('Invalid or expired OTP. Please request a new code.');
+      const remaining = MAX_OTP_VERIFY_ATTEMPTS - record.attempts;
+      const err: any = new Error(`Invalid verification code. ${remaining} attempt(s) remaining.`);
       err.statusCode = 400;
       err.code = 'AUTH_FAILED';
       throw err;
     }
 
-    const effectiveRequestedRole = requestedRole || record?.role || UserRole.CUSTOMER;
+    const effectiveRequestedRole = requestedRole || record.role || UserRole.CUSTOMER;
     otpStore.delete(cleanPhone);
 
     let user = await UserModel.findOne({ phone: cleanPhone });

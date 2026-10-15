@@ -3,11 +3,14 @@ import { createApp } from './app';
 import { connectDB } from './config/db';
 import { initializeSockets } from './sockets';
 import { startBackgroundJobs, stopBackgroundJobs } from './jobs';
-import { ENV } from './config/env';
+import { ENV, validateEnv } from './config/env';
 import { logger } from './config/logger';
 
 async function startServer() {
   try {
+    // Validate production environment security configuration
+    validateEnv();
+
     const app = createApp();
     const httpServer = http.createServer(app);
 

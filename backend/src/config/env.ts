@@ -33,3 +33,26 @@ export const ENV = {
   DISPATCH_OFFER_TIMEOUT_SECONDS: parseInt(process.env.DISPATCH_OFFER_TIMEOUT_SECONDS || '15', 10),
   DISPATCH_MAX_RETRY_ROUNDS: parseInt(process.env.DISPATCH_MAX_RETRY_ROUNDS || '3', 10),
 };
+
+export function validateEnv(): void {
+  if (ENV.NODE_ENV === 'production') {
+    if (ENV.OTP_PROVIDER === 'mock') {
+      throw new Error('Fatal configuration error: Mock OTP provider is strictly prohibited in production mode.');
+    }
+    if (ENV.PAYMENT_PROVIDER === 'mock') {
+      throw new Error('Fatal configuration error: Mock payment provider is strictly prohibited in production mode.');
+    }
+    if (!ENV.PAYMENT_KEY_ID || ENV.PAYMENT_KEY_ID.includes('sample')) {
+      throw new Error('Fatal configuration error: Real PAYMENT_KEY_ID is required in production mode.');
+    }
+    if (!ENV.PAYMENT_KEY_SECRET || ENV.PAYMENT_KEY_SECRET.includes('sample')) {
+      throw new Error('Fatal configuration error: Real PAYMENT_KEY_SECRET is required in production mode.');
+    }
+    if (ENV.JWT_ACCESS_SECRET.includes('dev_key') || ENV.JWT_ACCESS_SECRET.length < 32) {
+      throw new Error('Fatal configuration error: Secure JWT_ACCESS_SECRET (>= 32 chars) is required in production mode.');
+    }
+    if (ENV.JWT_REFRESH_SECRET.includes('dev_key') || ENV.JWT_REFRESH_SECRET.length < 32) {
+      throw new Error('Fatal configuration error: Secure JWT_REFRESH_SECRET (>= 32 chars) is required in production mode.');
+    }
+  }
+}
