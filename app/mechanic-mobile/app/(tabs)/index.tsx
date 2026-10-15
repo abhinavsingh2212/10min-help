@@ -4,6 +4,8 @@ import { useRouter } from 'expo-router';
 import { mechanicApi } from '../../src/api';
 import { getMechanicSocket } from '../../src/socket';
 import { SOCKET_EVENTS } from '@10min-help/shared';
+import { ClockIcon, ShieldIcon, CheckIcon, MapPinIcon, WrenchIcon, AlertIcon } from '../../src/components/Icons';
+import { THEME } from '../../src/theme';
 
 export default function MechanicDashboard() {
   const router = useRouter();
@@ -30,7 +32,7 @@ export default function MechanicDashboard() {
         setActiveJob(jobRes.data);
         setEarnings(earnRes.data);
       } catch (err) {
-        // default
+        // default fallback
       }
     }
 
@@ -104,35 +106,40 @@ export default function MechanicDashboard() {
       <View style={styles.statusCard}>
         <View>
           <Text style={styles.statusTitle}>Duty Status</Text>
-          <Text style={[styles.statusSubtitle, { color: isOnline ? '#34D399' : '#94A3B8' }]}>
+          <Text style={[styles.statusSubtitle, { color: isOnline ? THEME.colors.success : THEME.colors.textMuted }]}>
             {isOnline ? 'ONLINE • Receiving Requests' : 'OFFLINE • Shift Paused'}
           </Text>
         </View>
         <Switch
           value={isOnline}
           onValueChange={handleToggleOnline}
-          thumbColor={isOnline ? '#F59E0B' : '#64748B'}
-          trackColor={{ false: '#334155', true: '#B45309' }}
+          thumbColor={isOnline ? THEME.colors.primary : '#64748B'}
+          trackColor={{ false: '#334155', true: THEME.colors.primaryDark }}
         />
       </View>
 
       {/* Verification Badge */}
       <View style={styles.badgeCard}>
-        <Text style={styles.badgeTitle}>Verified Partner Profile</Text>
+        <View style={styles.badgeHeader}>
+          <ShieldIcon size={18} color={THEME.colors.success} />
+          <Text style={styles.badgeTitle}>Verified Partner Profile</Text>
+        </View>
         <Text style={styles.badgeSubtitle}>
-          Skills: {profile?.skills?.join(', ') || 'All breakdown services'}
+          Skills: {profile?.skills?.join(', ') || 'Puncture, Jump Start, Towing, Mechanical Repair'}
         </Text>
       </View>
 
       {/* Today's Metrics */}
       <View style={styles.metricsRow}>
         <View style={styles.metricBox}>
-          <Text style={styles.metricLabel}>Today&apos;s Jobs</Text>
+          <Text style={styles.metricLabel}>Today's Jobs</Text>
           <Text style={styles.metricValue}>{earnings?.todayJobs || 0}</Text>
         </View>
         <View style={styles.metricBox}>
           <Text style={styles.metricLabel}>Net Earnings</Text>
-          <Text style={styles.metricValue}>₹{earnings?.todayNetEarnings || 0}</Text>
+          <Text style={[styles.metricValue, { color: THEME.colors.success }]}>
+            ₹{earnings?.todayNetEarnings || 0}
+          </Text>
         </View>
       </View>
 
@@ -141,15 +148,26 @@ export default function MechanicDashboard() {
         <TouchableOpacity
           style={styles.activeJobCard}
           onPress={() => router.push({ pathname: '/jobs/[id]', params: { id: activeJob._id } })}
+          activeOpacity={0.85}
         >
-          <Text style={styles.activeJobBadge}>Current Active Breakdown</Text>
+          <View style={styles.activeTopRow}>
+            <Text style={styles.activeJobBadge}>Current Active Breakdown</Text>
+            <Text style={styles.activeJobStatus}>Stage: {activeJob.status} &rarr;</Text>
+          </View>
           <Text style={styles.activeJobTitle}>{activeJob.service?.name}</Text>
           <Text style={styles.activeJobDetails}>
             Customer: {activeJob.customer?.name} ({activeJob.customer?.phone})
           </Text>
-          <Text style={styles.activeJobStatus}>Stage: {activeJob.status} &rarr;</Text>
         </TouchableOpacity>
       )}
+
+      {/* Quick Status Info */}
+      <View style={styles.infoBox}>
+        <WrenchIcon size={16} color={THEME.colors.primary} />
+        <Text style={styles.infoText}>
+          Keep your mobile GPS enabled. 15-second timed offers are routed automatically by proximity.
+        </Text>
+      </View>
 
       {/* MODAL: 15-SECOND OFFER WINDOW */}
       <Modal visible={!!incomingOffer} transparent animationType="slide">
@@ -157,6 +175,7 @@ export default function MechanicDashboard() {
           <View style={styles.modalCard}>
             {/* Timer Banner */}
             <View style={styles.timerBox}>
+              <ClockIcon size={24} color="#FEF3C7" />
               <Text style={styles.timerText}>{countdown}s</Text>
               <Text style={styles.timerSub}>Offer Window Expiring</Text>
             </View>
@@ -193,38 +212,42 @@ export default function MechanicDashboard() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0A0F1D' },
+  container: { flex: 1, backgroundColor: THEME.colors.background },
   content: { padding: 16 },
-  statusCard: { backgroundColor: '#1E293B', padding: 20, borderRadius: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  statusTitle: { fontSize: 16, fontWeight: '900', color: '#FFFFFF' },
+  statusCard: { backgroundColor: THEME.colors.surface, padding: 20, borderRadius: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, borderWidth: 1, borderColor: THEME.colors.border },
+  statusTitle: { fontSize: 16, fontWeight: '900', color: THEME.colors.textMain },
   statusSubtitle: { fontSize: 12, fontWeight: '700', marginTop: 2 },
-  badgeCard: { backgroundColor: '#0F172A', padding: 16, borderRadius: 16, marginBottom: 16, borderWidth: 1, borderColor: '#334155' },
+  badgeCard: { backgroundColor: THEME.colors.surfaceSubtle, padding: 16, borderRadius: 16, marginBottom: 16, borderWidth: 1, borderColor: THEME.colors.border },
+  badgeHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   badgeTitle: { fontSize: 13, fontWeight: '800', color: '#FCD34D' },
-  badgeSubtitle: { fontSize: 11, color: '#94A3B8', marginTop: 3 },
+  badgeSubtitle: { fontSize: 11, color: THEME.colors.textMuted, marginTop: 4 },
   metricsRow: { flexDirection: 'row', gap: 12, marginBottom: 16 },
-  metricBox: { flex: 1, backgroundColor: '#1E293B', padding: 18, borderRadius: 18 },
-  metricLabel: { fontSize: 11, fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase' },
-  metricValue: { fontSize: 24, fontWeight: '900', color: '#FFFFFF', marginTop: 4 },
-  activeJobCard: { backgroundColor: '#D97706', padding: 20, borderRadius: 20 },
-  activeJobBadge: { fontSize: 11, fontWeight: '900', color: '#0F172A', textTransform: 'uppercase' },
-  activeJobTitle: { fontSize: 18, fontWeight: '900', color: '#0F172A', marginTop: 2 },
+  metricBox: { flex: 1, backgroundColor: THEME.colors.surface, padding: 18, borderRadius: 18, borderWidth: 1, borderColor: THEME.colors.border },
+  metricLabel: { fontSize: 11, fontWeight: '700', color: THEME.colors.textMuted, textTransform: 'uppercase' },
+  metricValue: { fontSize: 24, fontWeight: '900', color: THEME.colors.textMain, marginTop: 4 },
+  activeJobCard: { backgroundColor: THEME.colors.primary, padding: 20, borderRadius: 20, marginBottom: 16 },
+  activeTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  activeJobBadge: { fontSize: 11, fontWeight: '900', color: THEME.colors.secondary, textTransform: 'uppercase' },
+  activeJobTitle: { fontSize: 18, fontWeight: '900', color: THEME.colors.secondary, marginTop: 4 },
   activeJobDetails: { fontSize: 13, color: '#451A03', marginTop: 4 },
-  activeJobStatus: { fontSize: 12, fontWeight: '900', color: '#0F172A', marginTop: 10 },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'flex-end' },
-  modalCard: { backgroundColor: '#1E293B', borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 24, borderWidth: 1, borderColor: '#475569' },
-  timerBox: { backgroundColor: '#B45309', padding: 12, borderRadius: 16, alignItems: 'center', marginBottom: 16 },
-  timerText: { fontSize: 28, fontWeight: '900', color: '#FEF3C7' },
+  activeJobStatus: { fontSize: 12, fontWeight: '900', color: THEME.colors.secondary },
+  infoBox: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14, backgroundColor: THEME.colors.surface, borderRadius: 14, borderWidth: 1, borderColor: THEME.colors.border },
+  infoText: { fontSize: 11, color: THEME.colors.textMuted, flex: 1, lineHeight: 16 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'flex-end' },
+  modalCard: { backgroundColor: THEME.colors.surface, borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 24, borderWidth: 1, borderColor: THEME.colors.border },
+  timerBox: { backgroundColor: THEME.colors.primaryDark, padding: 14, borderRadius: 18, alignItems: 'center', marginBottom: 16 },
+  timerText: { fontSize: 32, fontWeight: '900', color: '#FEF3C7', marginTop: 2 },
   timerSub: { fontSize: 11, color: '#FDE68A', fontWeight: '700' },
-  offerTitle: { fontSize: 20, fontWeight: '900', color: '#FFFFFF' },
+  offerTitle: { fontSize: 20, fontWeight: '900', color: THEME.colors.textMain },
   offerVehicle: { fontSize: 13, color: '#FCD34D', fontWeight: '700', marginTop: 2 },
-  offerDistance: { fontSize: 13, color: '#94A3B8', marginTop: 6 },
+  offerDistance: { fontSize: 13, color: THEME.colors.textMuted, marginTop: 6 },
   offerLocation: { fontSize: 12, color: '#CBD5E1', marginTop: 2 },
-  earningsBox: { backgroundColor: '#0F172A', padding: 16, borderRadius: 16, marginVertical: 18, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  earningLabel: { fontSize: 12, color: '#94A3B8', fontWeight: '700' },
-  earningValue: { fontSize: 22, fontWeight: '900', color: '#34D399' },
+  earningsBox: { backgroundColor: THEME.colors.surfaceSubtle, padding: 16, borderRadius: 16, marginVertical: 18, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderWidth: 1, borderColor: THEME.colors.border },
+  earningLabel: { fontSize: 12, color: THEME.colors.textMuted, fontWeight: '700' },
+  earningValue: { fontSize: 22, fontWeight: '900', color: THEME.colors.success },
   modalActionRow: { flexDirection: 'row', gap: 12 },
   rejectBtn: { flex: 1, padding: 16, borderRadius: 14, backgroundColor: '#334155', alignItems: 'center' },
-  rejectBtnText: { color: '#94A3B8', fontWeight: '800' },
-  acceptBtn: { flex: 2, padding: 16, borderRadius: 14, backgroundColor: '#F59E0B', alignItems: 'center' },
-  acceptBtnText: { color: '#0F172A', fontWeight: '900', fontSize: 15 },
+  rejectBtnText: { color: THEME.colors.textMuted, fontWeight: '800' },
+  acceptBtn: { flex: 2, padding: 16, borderRadius: 14, backgroundColor: THEME.colors.primary, alignItems: 'center' },
+  acceptBtnText: { color: THEME.colors.secondary, fontWeight: '900', fontSize: 15 },
 });

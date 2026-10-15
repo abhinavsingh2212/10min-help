@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, TextInput } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, TextInput, Linking } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { mechanicApi } from '../../src/api';
 import { BookingStatus } from '@10min-help/shared';
+import { MapPinIcon, PhoneIcon, NavigateIcon, CheckIcon, AlertIcon, WrenchIcon, ShieldIcon } from '../../src/components/Icons';
+import { THEME } from '../../src/theme';
 
 export default function JobExecutionScreen() {
   const { id } = useLocalSearchParams() as { id: string };
@@ -71,10 +73,27 @@ export default function JobExecutionScreen() {
     }
   };
 
+  const openNavigation = () => {
+    const lat = job?.pickupLocation?.latitude || 12.9784;
+    const lng = job?.pickupLocation?.longitude || 77.6408;
+    const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+    Linking.openURL(url).catch(() => {
+      Alert.alert('Navigation Error', 'Could not open maps application.');
+    });
+  };
+
+  const callCustomer = () => {
+    const phone = job?.customer?.phone || '9876543210';
+    Linking.openURL(`tel:${phone}`).catch(() => {
+      Alert.alert('Call Error', `Unable to dial ${phone}`);
+    });
+  };
+
   if (loading || !job) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator color="#F59E0B" />
+        <ActivityIndicator size="large" color={THEME.colors.primary} />
+        <Text style={styles.loadingText}>Syncing dispatch job telemetry...</Text>
       </View>
     );
   }
@@ -83,22 +102,46 @@ export default function JobExecutionScreen() {
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {/* Header Info */}
       <View style={styles.card}>
-        <Text style={styles.badge}>{job.status}</Text>
+        <View style={styles.statusRow}>
+          <View style={styles.badge}>
+            <Text style={styles.badgeText}>{job.status}</Text>
+          </View>
+          <Text style={styles.ticketId}>ID #{job._id.slice(-6).toUpperCase()}</Text>
+        </View>
+
         <Text style={styles.serviceTitle}>{job.service?.name}</Text>
-        <Text style={styles.customerInfo}>
-          Customer: {job.customer?.name} ({job.customer?.phone})
-        </Text>
-        <Text style={styles.addressInfo}>
-          Location: {job.pickupLocation?.address || '100ft Road, Indiranagar'}
-        </Text>
-        <Text style={styles.quoteValue}>
-          Current Agreed Quote: ₹{job.approvedFinalAmount || job.quotedPrice}
-        </Text>
+
+        <View style={styles.detailRow}>
+          <MapPinIcon size={16} color={THEME.colors.primary} />
+          <Text style={styles.addressInfo}>
+            {job.pickupLocation?.address || '100ft Road, Indiranagar, Bengaluru'}
+          </Text>
+        </View>
+
+        {/* Action quick buttons: Navigation and Call */}
+        <View style={styles.quickActionRow}>
+          <TouchableOpacity style={styles.quickNavBtn} onPress={openNavigation}>
+            <NavigateIcon size={18} color="#FFFFFF" />
+            <Text style={styles.quickBtnText}>Turn-by-Turn GPS</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.quickCallBtn} onPress={callCustomer}>
+            <PhoneIcon size={16} color="#FFFFFF" />
+            <Text style={styles.quickBtnText}>Call Customer</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.priceRow}>
+          <Text style={styles.priceLabel}>Agreed Service Charge</Text>
+          <Text style={styles.quoteValue}>
+            ₹{job.approvedFinalAmount || job.quotedPrice}
+          </Text>
+        </View>
       </View>
 
       {/* State Machine Stepper Action Buttons */}
       <View style={styles.actionCard}>
-        <Text style={styles.actionHeading}>Step Workflow Actions</Text>
+        <Text style={styles.actionHeading}>Dispatch Step Actions</Text>
 
         {job.status === BookingStatus.ASSIGNED && (
           <TouchableOpacity
@@ -106,6 +149,7 @@ export default function JobExecutionScreen() {
             disabled={actionLoading}
             onPress={() => handleUpdateStatus(BookingStatus.EN_ROUTE, 'Mechanic started travel')}
           >
+            <NavigateIcon size={20} color={THEME.colors.secondary} />
             <Text style={styles.btnPrimaryText}>Start Travel (En Route)</Text>
           </TouchableOpacity>
         )}
@@ -116,6 +160,7 @@ export default function JobExecutionScreen() {
             disabled={actionLoading}
             onPress={() => handleUpdateStatus(BookingStatus.ARRIVED, 'Mechanic reached customer')}
           >
+            <MapPinIcon size={20} color={THEME.colors.secondary} />
             <Text style={styles.btnPrimaryText}>Mark Arrived at Location</Text>
           </TouchableOpacity>
         )}
@@ -126,6 +171,7 @@ export default function JobExecutionScreen() {
             disabled={actionLoading}
             onPress={() => handleUpdateStatus(BookingStatus.INSPECTING, 'Started vehicle diagnosis')}
           >
+            <WrenchIcon size={20} color={THEME.colors.secondary} />
             <Text style={styles.btnPrimaryText}>Start Inspection</Text>
           </TouchableOpacity>
         )}
@@ -137,6 +183,7 @@ export default function JobExecutionScreen() {
               disabled={actionLoading}
               onPress={() => handleUpdateStatus(BookingStatus.IN_PROGRESS, 'Standard repair started')}
             >
+              <CheckIcon size={20} color={THEME.colors.secondary} />
               <Text style={styles.btnPrimaryText}>Start Repair (Standard Quote)</Text>
             </TouchableOpacity>
 
@@ -144,6 +191,7 @@ export default function JobExecutionScreen() {
               style={styles.btnSecondary}
               onPress={() => setShowQuoteForm(true)}
             >
+              <AlertIcon size={18} color="#FCD34D" />
               <Text style={styles.btnSecondaryText}>Propose Revised Price Quote</Text>
             </TouchableOpacity>
           </View>
@@ -174,7 +222,7 @@ export default function JobExecutionScreen() {
 
         {job.status === BookingStatus.AWAITING_CUSTOMER_APPROVAL && (
           <View style={styles.waitingBox}>
-            <ActivityIndicator color="#F59E0B" />
+            <ActivityIndicator color={THEME.colors.primary} />
             <Text style={styles.waitingText}>
               Waiting for customer to approve revised quote of ₹{job.quotedPrice}...
             </Text>
@@ -190,12 +238,14 @@ export default function JobExecutionScreen() {
             disabled={actionLoading}
             onPress={() => handleUpdateStatus(BookingStatus.COMPLETED, 'Repair finished')}
           >
+            <CheckIcon size={20} color="#FFFFFF" />
             <Text style={styles.btnSuccessText}>Complete Job & Settle</Text>
           </TouchableOpacity>
         )}
 
         {job.status === BookingStatus.COMPLETED && (
           <View style={styles.completeBox}>
+            <CheckIcon size={24} color={THEME.colors.success} />
             <Text style={styles.completeText}>Job has been successfully completed!</Text>
           </View>
         )}
@@ -205,29 +255,39 @@ export default function JobExecutionScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0A0F1D' },
+  container: { flex: 1, backgroundColor: THEME.colors.background },
   content: { padding: 16 },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  card: { backgroundColor: '#1E293B', padding: 20, borderRadius: 20, marginBottom: 16 },
-  badge: { alignSelf: 'flex-start', backgroundColor: '#B45309', color: '#FEF3C7', fontSize: 11, fontWeight: '900', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, textTransform: 'uppercase', marginBottom: 8 },
-  serviceTitle: { fontSize: 20, fontWeight: '900', color: '#FFFFFF' },
-  customerInfo: { fontSize: 13, color: '#FCD34D', fontWeight: '700', marginTop: 4 },
-  addressInfo: { fontSize: 12, color: '#94A3B8', marginTop: 2 },
-  quoteValue: { fontSize: 15, fontWeight: '900', color: '#34D399', marginTop: 10 },
-  actionCard: { backgroundColor: '#1E293B', padding: 20, borderRadius: 20 },
-  actionHeading: { fontSize: 13, fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', marginBottom: 16 },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: THEME.colors.background },
+  loadingText: { marginTop: 12, color: THEME.colors.textMuted, fontSize: 13 },
+  card: { backgroundColor: THEME.colors.surface, padding: 20, borderRadius: 20, marginBottom: 16, borderWidth: 1, borderColor: THEME.colors.border },
+  statusRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  badge: { backgroundColor: THEME.colors.amberDeep, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
+  badgeText: { color: '#FEF3C7', fontSize: 11, fontWeight: '900', textTransform: 'uppercase' },
+  ticketId: { color: THEME.colors.textMuted, fontSize: 12, fontFamily: 'monospace' },
+  serviceTitle: { fontSize: 20, fontWeight: '900', color: THEME.colors.textMain, marginTop: 4 },
+  detailRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10 },
+  addressInfo: { fontSize: 13, color: THEME.colors.textMuted, flex: 1 },
+  quickActionRow: { flexDirection: 'row', gap: 10, marginTop: 16 },
+  quickNavBtn: { flex: 1, backgroundColor: '#2563EB', paddingVertical: 12, paddingHorizontal: 14, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  quickCallBtn: { flex: 1, backgroundColor: '#059669', paddingVertical: 12, paddingHorizontal: 14, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  quickBtnText: { color: '#FFFFFF', fontWeight: '800', fontSize: 13 },
+  priceRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 16, paddingTop: 14, borderTopWidth: 1, borderTopColor: THEME.colors.border },
+  priceLabel: { fontSize: 12, color: THEME.colors.textMuted, fontWeight: '700' },
+  quoteValue: { fontSize: 18, fontWeight: '900', color: THEME.colors.success },
+  actionCard: { backgroundColor: THEME.colors.surface, padding: 20, borderRadius: 20, borderWidth: 1, borderColor: THEME.colors.border },
+  actionHeading: { fontSize: 12, fontWeight: '800', color: THEME.colors.textMuted, textTransform: 'uppercase', marginBottom: 16 },
   buttonStack: { gap: 10 },
-  btnPrimary: { backgroundColor: '#F59E0B', padding: 16, borderRadius: 14, alignItems: 'center', marginTop: 8 },
-  btnPrimaryText: { color: '#0F172A', fontWeight: '900', fontSize: 15 },
-  btnSecondary: { backgroundColor: '#334155', padding: 16, borderRadius: 14, alignItems: 'center', marginTop: 8 },
+  btnPrimary: { backgroundColor: THEME.colors.primary, padding: 16, borderRadius: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 8 },
+  btnPrimaryText: { color: THEME.colors.secondary, fontWeight: '900', fontSize: 15 },
+  btnSecondary: { backgroundColor: '#334155', padding: 16, borderRadius: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 8 },
   btnSecondaryText: { color: '#FFFFFF', fontWeight: '800', fontSize: 14 },
-  btnSuccess: { backgroundColor: '#059669', padding: 16, borderRadius: 14, alignItems: 'center', marginTop: 8 },
+  btnSuccess: { backgroundColor: THEME.colors.success, padding: 16, borderRadius: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 8 },
   btnSuccessText: { color: '#FFFFFF', fontWeight: '900', fontSize: 15 },
-  formBox: { marginTop: 12, padding: 16, backgroundColor: '#0F172A', borderRadius: 16 },
-  formLabel: { fontSize: 11, fontWeight: '700', color: '#94A3B8', marginBottom: 4 },
-  input: { backgroundColor: '#1E293B', borderWidth: 1, borderColor: '#334155', padding: 10, borderRadius: 10, color: '#FFFFFF', fontSize: 14, marginBottom: 12 },
+  formBox: { marginTop: 12, padding: 16, backgroundColor: THEME.colors.surfaceSubtle, borderRadius: 16 },
+  formLabel: { fontSize: 11, fontWeight: '700', color: THEME.colors.textMuted, marginBottom: 4 },
+  input: { backgroundColor: THEME.colors.surface, borderWidth: 1, borderColor: THEME.colors.border, padding: 10, borderRadius: 10, color: THEME.colors.textMain, fontSize: 14, marginBottom: 12 },
   waitingBox: { alignItems: 'center', padding: 16, gap: 10 },
   waitingText: { color: '#FCD34D', fontSize: 13, textAlign: 'center', fontWeight: '600' },
-  completeBox: { padding: 16, backgroundColor: '#064E3B', borderRadius: 14, alignItems: 'center' },
-  completeText: { color: '#34D399', fontWeight: '900' },
+  completeBox: { padding: 16, backgroundColor: THEME.colors.successBg, borderRadius: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  completeText: { color: THEME.colors.success, fontWeight: '900' },
 });

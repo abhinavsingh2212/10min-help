@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@10min-help/shared": "*",
+    "@expo/vector-icons": "^15.1.1",
     "expo": "~51.0.0",
     "expo-constants": "~16.0.1",
     "expo-linking": "~6.3.1",
