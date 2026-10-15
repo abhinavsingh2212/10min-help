@@ -6,7 +6,8 @@
   "workspaces": [
     "packages/*",
     "backend",
-    "apps/*"
+    "app/*",
+    "web/*"
   ],
   "scripts": {
     "build:shared": "npm run build --workspace=@10min-help/shared",

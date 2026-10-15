@@ -95,13 +95,13 @@ pm2 start backend/dist/server.js --name "10min-help-api" -i max
 ## 4. Web Applications Deployment (Vercel)
 
 1. **Customer Web**:
-   - Root directory: `apps/customer-web`
+   - Root directory: `web/customer-web`
    - Build Command: `npm run build`
    - Environment Variables:
      - `NEXT_PUBLIC_API_URL=https://api.10minhelp.in/api/v1`
      - `NEXT_PUBLIC_SOCKET_URL=https://api.10minhelp.in`
 2. **Admin Operations Web**:
-   - Root directory: `apps/admin-web`
+   - Root directory: `web/admin-web`
    - Build Command: `npm run build`
    - Environment Variables:
      - `NEXT_PUBLIC_API_URL=https://api.10minhelp.in/api/v1`
@@ -113,7 +113,7 @@ pm2 start backend/dist/server.js --name "10min-help-api" -i max
 
 ### Customer Mobile App
 ```bash
-cd apps/customer-mobile
+cd app/customer-mobile
 eas build --platform all --profile production
 eas submit --platform android
 eas submit --platform ios
@@ -121,7 +121,7 @@ eas submit --platform ios
 
 ### Mechanic Mobile App
 ```bash
-cd apps/mechanic-mobile
+cd app/mechanic-mobile
 eas build --platform all --profile production
 eas submit --platform android
 eas submit --platform ios

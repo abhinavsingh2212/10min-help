@@ -11,10 +11,10 @@
 
 The monorepo encompasses four user-facing applications powered by a single unified Node.js/TypeScript backend, shared business logic, database models, and real-time Socket.IO telemetry:
 
-1. **Customer Mobile Application** (`apps/customer-mobile`): React Native Expo app with GPS pinpointing, vehicle garage, live dispatch radar, mechanic tracking, quote approvals, and digital payments.
-2. **Mechanic Partner Application** (`apps/mechanic-mobile`): React Native Expo app with duty toggle (online/offline), incoming job requests with a **strict 15-second countdown offer window**, state-machine-enforced job progression, and earnings analytics.
-3. **Customer Responsive Web Portal** (`apps/customer-web`): Next.js App Router portal with full service catalogue, bike vs. car transparent pricing tables, instant emergency dispatch, and live tracking.
-4. **Admin & Dispatch Console** (`apps/admin-web`): Next.js App Router operations dashboard with real database-calculated KPIs (10-minute arrival compliance %, gross revenue, mechanic liabilities), live telemetry radar, ticket management, technician vetting, and dynamic pricing controls.
+1. **Customer Mobile Application** (`app/customer-mobile`): React Native Expo app with GPS pinpointing, vehicle garage, live dispatch radar, mechanic tracking, quote approvals, and digital payments.
+2. **Mechanic Partner Application** (`app/mechanic-mobile`): React Native Expo app with duty toggle (online/offline), incoming job requests with a **strict 15-second countdown offer window**, state-machine-enforced job progression, and earnings analytics.
+3. **Customer Responsive Web Portal** (`web/customer-web`): Next.js App Router portal with full service catalogue, bike vs. car transparent pricing tables, instant emergency dispatch, and live tracking.
+4. **Admin & Dispatch Console** (`web/admin-web`): Next.js App Router operations dashboard with real database-calculated KPIs (10-minute arrival compliance %, gross revenue, mechanic liabilities), live telemetry radar, ticket management, technician vetting, and dynamic pricing controls.
 
 ---
 
@@ -90,7 +90,7 @@ INSPECTING ───────► AWAITING_CUSTOMER_APPROVAL (If parts / extra
 | **Tyre Change / Stepney** | ₹150 | ₹150 | Hydraulic jack lifting, spare fitting |
 | **Long-Distance Towing** | ₹999 | ₹999 | Flatbed or wheel-lift, first 5 km included |
 
-*Prices are configurable dynamically by administrators in `apps/admin-web/src/app/services`.*
+*Prices are configurable dynamically by administrators in `web/admin-web/src/app/services`.*
 
 ---
 
@@ -98,11 +98,12 @@ INSPECTING ───────► AWAITING_CUSTOMER_APPROVAL (If parts / extra
 
 ```
 10Min_Help/
-├── apps/
-│   ├── customer-web/         # Next.js customer booking portal (port 3000)
-│   ├── admin-web/            # Next.js operations & dispatch console (port 3001)
+├── app/
 │   ├── customer-mobile/      # Expo React Native customer application
 │   └── mechanic-mobile/      # Expo React Native partner technician application
+├── web/
+│   ├── customer-web/         # Next.js customer booking portal (port 3000)
+│   └── admin-web/            # Next.js operations & dispatch console (port 3001)
 ├── backend/
 │   ├── src/
 │   │   ├── config/           # Environment, logger, and database config
