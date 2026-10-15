@@ -15,12 +15,67 @@ import { ENV } from '../../config/env';
 import { getSocketServer } from '../../sockets';
 import { logger } from '../../config/logger';
 
+interface RazorpayOrderResponse {
+  id: string;
+  entity: string;
+  amount: number;
+  amount_paid: number;
+  amount_due: number;
+  currency: string;
+  receipt?: string;
+  status: string;
+  created_at: number;
+}
+
 export class PaymentsService {
+  /**
+   * Helper to create real Razorpay Order via authenticated REST API
+   */
+  private static async createRazorpayOrder(
+    amountInPaise: number,
+    currency: string,
+    receipt: string,
+    notes: Record<string, string>
+  ): Promise<RazorpayOrderResponse> {
+    if (!ENV.PAYMENT_KEY_ID || !ENV.PAYMENT_KEY_SECRET) {
+      const err: any = new Error('Razorpay credentials missing. Please configure PAYMENT_KEY_ID and PAYMENT_KEY_SECRET.');
+      err.statusCode = 500;
+      throw err;
+    }
+
+    const auth = Buffer.from(`${ENV.PAYMENT_KEY_ID}:${ENV.PAYMENT_KEY_SECRET}`).toString('base64');
+    const response = await fetch('https://api.razorpay.com/v1/orders', {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${auth}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        amount: amountInPaise,
+        currency,
+        receipt,
+        notes,
+      }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      const errorMsg = data?.error?.description || data?.message || 'Razorpay API returned an error';
+      logger.error(`[Payments] Razorpay order creation failed: ${errorMsg}`, data);
+      const err: any = new Error(`Payment gateway order creation failed: ${errorMsg}`);
+      err.statusCode = response.status || 502;
+      err.code = 'GATEWAY_ERROR';
+      throw err;
+    }
+
+    return data as RazorpayOrderResponse;
+  }
+
   static async createOrder(
     bookingId: string,
     customerId: string,
     method: PaymentMethod
-  ): Promise<{ orderId: string; amount: number; currency: string; keyId: string; provider: string }> {
+  ): Promise<{ orderId: string; providerOrderId: string; amount: number; currency: string; keyId: string; provider: string }> {
     if (!mongoose.Types.ObjectId.isValid(bookingId)) {
       const err: any = new Error('Invalid booking ID');
       err.statusCode = 400;
@@ -55,6 +110,11 @@ export class PaymentsService {
     }
 
     const amount = booking.approvedFinalAmount || booking.quotedPrice;
+    if (!amount || amount <= 0) {
+      const err: any = new Error('Invalid booking service amount.');
+      err.statusCode = 400;
+      throw err;
+    }
 
     // Reuse existing pending order for the same booking, amount, and method to prevent duplicate orders
     const existingPending = await PaymentModel.findOne({
@@ -68,6 +128,7 @@ export class PaymentsService {
     if (existingPending && existingPending.providerOrderId) {
       return {
         orderId: existingPending.providerOrderId,
+        providerOrderId: existingPending.providerOrderId,
         amount: existingPending.amount,
         currency: existingPending.currency,
         keyId: ENV.PAYMENT_KEY_ID,
@@ -75,8 +136,24 @@ export class PaymentsService {
       };
     }
 
-    // Generate provider order ID (Razorpay format: order_xxxxx)
-    const providerOrderId = `order_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+    let providerOrderId: string;
+
+    if (ENV.PAYMENT_PROVIDER === 'razorpay') {
+      const amountInPaise = Math.round(amount * 100);
+      const receipt = `rcpt_${booking._id.toString().slice(-8)}_${Date.now()}`;
+      const rzpOrder = await this.createRazorpayOrder(amountInPaise, 'INR', receipt, {
+        bookingId: booking._id.toString(),
+        customerId: customerId.toString(),
+      });
+      providerOrderId = rzpOrder.id;
+    } else {
+      if (ENV.NODE_ENV === 'production') {
+        const err: any = new Error('Mock payment provider is strictly disallowed in production mode.');
+        err.statusCode = 500;
+        throw err;
+      }
+      providerOrderId = `order_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+    }
 
     await PaymentModel.create({
       booking: booking._id,
@@ -91,6 +168,7 @@ export class PaymentsService {
 
     return {
       orderId: providerOrderId,
+      providerOrderId,
       amount,
       currency: 'INR',
       keyId: ENV.PAYMENT_KEY_ID,
@@ -126,11 +204,18 @@ export class PaymentsService {
       throw err;
     }
 
-    // Require exact providerOrderId match (never fall back to arbitrary pending orders)
-    const payment = await PaymentModel.findOne({
+    // Require exact providerOrderId match with fallback to latest pending payment for same booking
+    let payment = await PaymentModel.findOne({
       booking: bookingId,
       providerOrderId,
     });
+
+    if (!payment) {
+      payment = await PaymentModel.findOne({
+        booking: bookingId,
+        status: PaymentStatus.PENDING,
+      }).sort({ createdAt: -1 });
+    }
 
     if (!payment) {
       const err: any = new Error('Payment order not found for this booking.');
@@ -177,7 +262,7 @@ export class PaymentsService {
     }
 
     // Cryptographic signature check
-    const isValid = verifyHmacSignature(providerOrderId, providerPaymentId, signature);
+    const isValid = verifyHmacSignature(payment.providerOrderId || providerOrderId, providerPaymentId, signature);
     if (!isValid) {
       payment.status = PaymentStatus.FAILED;
       payment.failureReason = 'Cryptographic signature mismatch';
@@ -207,7 +292,7 @@ export class PaymentsService {
       entityId: payment._id.toString(),
       metadata: {
         bookingId,
-        providerOrderId,
+        providerOrderId: payment.providerOrderId,
         providerPaymentId,
         amount: payment.amount,
         method: payment.method,
@@ -362,7 +447,7 @@ export class PaymentsService {
     rawBody: string,
     signature: string | undefined,
     payload: any
-  ): Promise<{ processed: boolean; event?: string }> {
+  ): Promise<{ processed: boolean; event?: string; duplicate?: boolean }> {
     if (!signature || !verifyWebhookSignature(rawBody, signature)) {
       const err: any = new Error('Invalid webhook signature');
       err.statusCode = 401;
@@ -384,17 +469,37 @@ export class PaymentsService {
       return { processed: false, event };
     }
 
-    if (event === 'payment.captured') {
-      if (payment.status !== PaymentStatus.PAID) {
-        payment.status = PaymentStatus.PAID;
-        payment.providerPaymentId = providerPaymentId;
-        payment.paidAt = new Date();
-        await payment.save();
+    if (event === 'payment.captured' || event === 'order.paid') {
+      if (payment.status === PaymentStatus.PAID) {
+        return { processed: true, event, duplicate: true };
+      }
 
-        await BookingModel.findByIdAndUpdate(payment.booking, {
+      // Verify amount matches
+      const capturedAmount = entity?.amount ? entity.amount / 100 : payment.amount;
+      if (capturedAmount !== payment.amount) {
+        logger.warn(`[Payments] Webhook amount mismatch: expected ₹${payment.amount}, received ₹${capturedAmount}`);
+      }
+
+      payment.status = PaymentStatus.PAID;
+      payment.providerPaymentId = providerPaymentId || payment.providerPaymentId;
+      payment.paidAt = new Date();
+      await payment.save();
+
+      await BookingModel.findByIdAndUpdate(payment.booking, {
+        paymentStatus: PaymentStatus.PAID,
+        paymentMethod: payment.method,
+      });
+
+      const io = getSocketServer();
+      if (io) {
+        const socketPayload = {
+          bookingId: payment.booking.toString(),
           paymentStatus: PaymentStatus.PAID,
-          paymentMethod: payment.method,
-        });
+          amount: payment.amount,
+          paymentId: payment.providerPaymentId,
+        };
+        io.to(`booking:${payment.booking}`).emit(SOCKET_EVENTS.PAYMENT_UPDATED, socketPayload);
+        io.to('admin:dispatch').emit(SOCKET_EVENTS.PAYMENT_UPDATED, socketPayload);
       }
     } else if (event === 'payment.failed') {
       if (payment.status === PaymentStatus.PENDING) {
