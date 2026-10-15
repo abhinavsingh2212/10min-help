@@ -19,6 +19,7 @@ router.use(authMiddleware);
 router.post('/', validateBody(createBookingSchema), BookingsController.create);
 router.get('/', BookingsController.listMyBookings);
 router.get('/:id', BookingsController.getById);
+router.get('/:id/invoice', BookingsController.getInvoice);
 router.post('/:id/cancel', validateBody(cancelBookingSchema), BookingsController.cancel);
 router.post('/:id/retry-dispatch', BookingsController.retryDispatch);
 router.post(

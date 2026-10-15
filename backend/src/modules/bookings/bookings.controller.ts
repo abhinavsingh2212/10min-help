@@ -102,4 +102,23 @@ export class BookingsController {
       return sendError(res, err.message, err.statusCode || 400, err.code);
     }
   }
+
+  static async getInvoice(req: Request, res: Response, next: NextFunction) {
+    try {
+      const invoice = await BookingsService.getInvoice(
+        req.params.id,
+        req.user!.userId,
+        req.user!.role
+      );
+
+      if (req.query.format === 'html') {
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        return res.status(200).send(invoice.htmlReceipt);
+      }
+
+      return sendSuccess(res, invoice);
+    } catch (err: any) {
+      return sendError(res, err.message, err.statusCode || 400, err.code);
+    }
+  }
 }

@@ -71,11 +71,11 @@ export async function runSeeds(options: SeedOptions = {}) {
         {
           $setOnInsert: {
             category: s.category,
-            startingPrice: s.startingPrice,
             isActive: true,
           },
           $set: {
             name: s.name,
+            startingPrice: s.startingPrice,
             description: s.description,
             inclusions: s.inclusions,
             supportedVehicles: s.supportedVehicles,

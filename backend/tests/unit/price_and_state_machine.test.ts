@@ -24,16 +24,36 @@ describe('Service Pricing Matrix & State Machine Unit Tests', () => {
 
     it('should enforce correct starting prices from specification', () => {
       const puncture = INITIAL_SERVICE_CATALOGUE.find((s) => s.category === ServiceCategory.PUNCTURE)!;
-      expect(puncture.startingPrice[VehicleType.BIKE]).toBe(120);
-      expect(puncture.startingPrice[VehicleType.CAR]).toBe(200);
+      expect(puncture.startingPrice[VehicleType.BIKE]).toBe(249);
+      expect(puncture.startingPrice[VehicleType.CAR]).toBe(349);
 
       const battery = INITIAL_SERVICE_CATALOGUE.find((s) => s.category === ServiceCategory.BATTERY)!;
-      expect(battery.startingPrice[VehicleType.BIKE]).toBe(150);
-      expect(battery.startingPrice[VehicleType.CAR]).toBe(250);
+      expect(battery.startingPrice[VehicleType.BIKE]).toBe(299);
+      expect(battery.startingPrice[VehicleType.CAR]).toBe(499);
 
       const towing = INITIAL_SERVICE_CATALOGUE.find((s) => s.category === ServiceCategory.TOWING)!;
-      expect(towing.startingPrice[VehicleType.BIKE]).toBe(999);
-      expect(towing.startingPrice[VehicleType.CAR]).toBe(999);
+      expect(towing.startingPrice[VehicleType.BIKE]).toBe(799);
+      expect(towing.startingPrice[VehicleType.CAR]).toBe(1499);
+
+      const fuel = INITIAL_SERVICE_CATALOGUE.find((s) => s.category === ServiceCategory.FUEL)!;
+      expect(fuel.startingPrice[VehicleType.BIKE]).toBe(199);
+      expect(fuel.startingPrice[VehicleType.CAR]).toBe(299);
+
+      const lockout = INITIAL_SERVICE_CATALOGUE.find((s) => s.category === ServiceCategory.LOCKOUT)!;
+      expect(lockout.startingPrice[VehicleType.BIKE]).toBe(399);
+      expect(lockout.startingPrice[VehicleType.CAR]).toBe(599);
+
+      const minorRepair = INITIAL_SERVICE_CATALOGUE.find((s) => s.category === ServiceCategory.MINOR_REPAIR)!;
+      expect(minorRepair.startingPrice[VehicleType.BIKE]).toBe(349);
+      expect(minorRepair.startingPrice[VehicleType.CAR]).toBe(549);
+
+      const notStarting = INITIAL_SERVICE_CATALOGUE.find((s) => s.category === ServiceCategory.NOT_STARTING)!;
+      expect(notStarting.startingPrice[VehicleType.BIKE]).toBe(199);
+      expect(notStarting.startingPrice[VehicleType.CAR]).toBe(349);
+
+      const tyreChange = INITIAL_SERVICE_CATALOGUE.find((s) => s.category === ServiceCategory.TYRE_CHANGE)!;
+      expect(tyreChange.startingPrice[VehicleType.BIKE]).toBe(399);
+      expect(tyreChange.startingPrice[VehicleType.CAR]).toBe(699);
     });
   });
 

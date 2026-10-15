@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { BookingModel, IBooking } from '../../models/Booking';
+import { PaymentModel } from '../../models/Payment';
 import { VehicleModel } from '../../models/Vehicle';
 import { ServiceModel } from '../../models/Service';
 import { TechnicianModel } from '../../models/Technician';
@@ -505,5 +506,215 @@ export class BookingsService {
       io.to(`booking:${bookingId}`).emit(event, payload);
       io.to('admin:dispatch').emit(event, payload);
     }
+  }
+
+  static async getInvoice(bookingId: string, userId: string, role: UserRole) {
+    if (!mongoose.Types.ObjectId.isValid(bookingId)) {
+      const err: any = new Error('Invalid booking ID');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const booking = await BookingModel.findById(bookingId)
+      .populate('customer', 'name phone email')
+      .populate('service', 'name category')
+      .populate({
+        path: 'technician',
+        populate: { path: 'user', select: 'name phone' },
+      });
+
+    if (!booking) {
+      const err: any = new Error('Booking not found');
+      err.statusCode = 404;
+      throw err;
+    }
+
+    const isCustomer =
+      (booking.customer as any)?._id?.toString() === userId ||
+      booking.customer?.toString() === userId;
+    const isAssignedTech = Boolean(
+      booking.technician &&
+        ((booking.technician as any).user?._id?.toString() === userId ||
+          (booking.technician as any).user?.toString() === userId)
+    );
+    const isAdmin = role === UserRole.ADMIN || role === UserRole.DISPATCHER;
+
+    if (!isCustomer && !isAssignedTech && !isAdmin) {
+      const err: any = new Error('Access denied: you are not authorized to view invoice for this booking.');
+      err.statusCode = 403;
+      throw err;
+    }
+
+    const payment = await PaymentModel.findOne({ booking: booking._id }).sort({ createdAt: -1 });
+
+    const totalAmount = booking.approvedFinalAmount || booking.quotedPrice || 0;
+    const baseAmount = booking.initialPrice || totalAmount;
+    const additionalRepairs = Math.max(0, totalAmount - baseAmount);
+    const netAmount = Math.round((totalAmount / 1.18) * 100) / 100;
+    const totalGst = Math.round((totalAmount - netAmount) * 100) / 100;
+    const cgst = Math.round((totalGst / 2) * 100) / 100;
+    const sgst = Math.round((totalGst / 2) * 100) / 100;
+
+    const invoiceNumber = `INV-${booking._id.toString().slice(-8).toUpperCase()}`;
+    const invoiceDate = payment?.paidAt || booking.completedAt || (booking as any).updatedAt || new Date();
+
+    const customerData = booking.customer as any;
+    const techData = booking.technician as any;
+    const serviceData = booking.service as any;
+
+    const invoiceData = {
+      invoiceNumber,
+      invoiceDate: new Date(invoiceDate).toISOString(),
+      bookingId: booking._id.toString(),
+      status: booking.status,
+      customer: {
+        id: customerData?._id?.toString() || '',
+        name: customerData?.name || 'Customer',
+        phone: customerData?.phone || '',
+        email: customerData?.email || '',
+      },
+      technician: {
+        id: techData?._id?.toString() || '',
+        name: techData?.businessName || techData?.user?.name || 'Verified Technician Partner',
+        phone: techData?.user?.phone || '',
+      },
+      vehicle: {
+        manufacturer: booking.vehicle?.manufacturer || '',
+        model: booking.vehicle?.model || '',
+        registrationNumber: booking.vehicle?.registrationNumber || 'N/A',
+        vehicleType: booking.vehicle?.vehicleType || '',
+      },
+      service: {
+        name: serviceData?.name || 'Emergency Roadside Assistance',
+        category: serviceData?.category || 'ROADSIDE_ASSISTANCE',
+      },
+      breakdown: {
+        baseServiceFee: baseAmount,
+        additionalRepairsOrSpares: additionalRepairs,
+        quoteRevisionReason: booking.quoteRevisionReason || null,
+        taxableAmount: netAmount,
+        cgstAmount: cgst,
+        sgstAmount: sgst,
+        gstRatePercent: 18,
+        totalAmount,
+        currency: 'INR',
+      },
+      payment: {
+        status: booking.paymentStatus,
+        method: booking.paymentMethod || payment?.method || 'N/A',
+        providerOrderId: payment?.providerOrderId || 'N/A',
+        providerPaymentId: payment?.providerPaymentId || 'N/A',
+        paidAt: payment?.paidAt ? new Date(payment.paidAt).toISOString() : null,
+      },
+    };
+
+    const htmlReceipt = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Tax Invoice - ${invoiceNumber} - 10Min Help</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 24px; color: #1e293b; background: #f8fafc; }
+    .invoice-card { max-width: 680px; margin: 0 auto; background: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; padding: 32px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+    .header { display: flex; justify-content: space-between; border-bottom: 2px solid #e2e8f0; padding-bottom: 20px; margin-bottom: 24px; }
+    .brand { font-size: 24px; font-weight: 800; color: #0284c7; }
+    .subbrand { font-size: 13px; color: #64748b; margin-top: 4px; }
+    .inv-details { text-align: right; }
+    .inv-number { font-size: 18px; font-weight: 700; color: #0f172a; }
+    .inv-date { font-size: 13px; color: #64748b; margin-top: 4px; }
+    .parties { display: flex; justify-content: space-between; margin-bottom: 24px; }
+    .party { width: 48%; font-size: 14px; line-height: 1.5; }
+    .party-title { font-weight: 700; color: #334155; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; margin-bottom: 6px; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
+    th { text-align: left; padding: 10px 12px; background: #f1f5f9; color: #475569; font-size: 13px; font-weight: 600; }
+    td { padding: 12px; border-bottom: 1px solid #f1f5f9; font-size: 14px; }
+    .text-right { text-align: right; }
+    .totals { margin-left: auto; width: 280px; font-size: 14px; margin-bottom: 24px; }
+    .total-row { display: flex; justify-content: space-between; padding: 6px 0; }
+    .grand-total { font-size: 18px; font-weight: 800; color: #0f172a; border-top: 2px solid #e2e8f0; padding-top: 10px; margin-top: 6px; }
+    .payment-badge { display: inline-block; padding: 4px 10px; border-radius: 9999px; font-size: 12px; font-weight: 700; background: ${booking.paymentStatus === PaymentStatus.PAID ? '#dcfce7; color: #15803d;' : '#fef3c7; color: #b45309;'} }
+    .print-btn { background: #0284c7; color: #ffffff; border: none; padding: 10px 20px; border-radius: 6px; font-weight: 600; cursor: pointer; margin-top: 20px; }
+    @media print {
+      body { background: #ffffff; padding: 0; }
+      .invoice-card { border: none; box-shadow: none; padding: 0; }
+      .print-btn { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="invoice-card">
+    <div class="header">
+      <div>
+        <div class="brand">10Min Help</div>
+        <div class="subbrand">Rapid Roadside Assistance India<br>GSTIN: 29AABCU9603R1ZX</div>
+      </div>
+      <div class="inv-details">
+        <div class="inv-number">${invoiceNumber}</div>
+        <div class="inv-date">Date: ${new Date(invoiceDate).toLocaleDateString('en-IN')}</div>
+        <div style="margin-top: 8px;"><span class="payment-badge">${booking.paymentStatus}</span></div>
+      </div>
+    </div>
+
+    <div class="parties">
+      <div class="party">
+        <div class="party-title">Billed To</div>
+        <strong>${customerData?.name || 'Customer'}</strong><br>
+        Phone: ${customerData?.phone || 'N/A'}<br>
+        Vehicle: ${booking.vehicle?.manufacturer || ''} ${booking.vehicle?.model || ''} (${booking.vehicle?.registrationNumber || 'N/A'})
+      </div>
+      <div class="party">
+        <div class="party-title">Serviced By</div>
+        <strong>${techData?.businessName || techData?.user?.name || 'Verified Technician Partner'}</strong><br>
+        Partner Phone: ${techData?.user?.phone || 'N/A'}<br>
+        Booking Ref: ${booking._id.toString()}
+      </div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Description</th>
+          <th class="text-right">Rate</th>
+          <th class="text-right">Amount (₹)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>${serviceData?.name || 'Roadside Assistance Service'} (${booking.vehicle?.vehicleType})</td>
+          <td class="text-right">₹${baseAmount}</td>
+          <td class="text-right">₹${baseAmount}</td>
+        </tr>
+        ${additionalRepairs > 0 ? `
+        <tr>
+          <td>Additional Parts / Repairs (${booking.quoteRevisionReason || 'Approved revision'})</td>
+          <td class="text-right">₹${additionalRepairs}</td>
+          <td class="text-right">₹${additionalRepairs}</td>
+        </tr>` : ''}
+      </tbody>
+    </table>
+
+    <div class="totals">
+      <div class="total-row"><span>Taxable Value:</span><span>₹${netAmount.toFixed(2)}</span></div>
+      <div class="total-row"><span>CGST (9%):</span><span>₹${cgst.toFixed(2)}</span></div>
+      <div class="total-row"><span>SGST (9%):</span><span>₹${sgst.toFixed(2)}</span></div>
+      <div class="total-row grand-total"><span>Total Paid:</span><span>₹${totalAmount.toFixed(2)}</span></div>
+    </div>
+
+    <div style="font-size: 13px; color: #64748b; border-top: 1px solid #e2e8f0; padding-top: 16px;">
+      Payment Method: <strong>${booking.paymentMethod || payment?.method || 'N/A'}</strong> |
+      Ref / Order ID: <strong>${payment?.providerOrderId || payment?.providerPaymentId || 'N/A'}</strong>
+    </div>
+
+    <button class="print-btn" onclick="window.print()">Print / Save as PDF</button>
+  </div>
+</body>
+</html>
+    `.trim();
+
+    return {
+      ...invoiceData,
+      htmlReceipt,
+    };
   }
 }

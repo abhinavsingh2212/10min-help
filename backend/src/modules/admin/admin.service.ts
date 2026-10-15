@@ -52,7 +52,7 @@ export class AdminService {
       TechnicianModel.countDocuments({
         isOnline: true,
         verificationStatus: TechnicianVerificationStatus.VERIFIED,
-        activeBookingId: { $exists: false },
+        $or: [{ activeBookingId: { $exists: false } }, { activeBookingId: null }],
       }),
       BookingModel.find({
         ...dateQuery,
