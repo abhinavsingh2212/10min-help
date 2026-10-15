@@ -9,7 +9,7 @@ export class PaymentsController {
       const order = await PaymentsService.createOrder(bookingId, req.user!.userId, method);
       return sendSuccess(res, order, 'Payment order created');
     } catch (err: any) {
-      return sendError(res, err.message, 400);
+      return sendError(res, err.message, err.statusCode || 400, err.code);
     }
   }
 
@@ -25,27 +25,42 @@ export class PaymentsController {
       );
       return sendSuccess(res, payment, 'Payment verified successfully');
     } catch (err: any) {
-      return sendError(res, err.message, 400);
+      return sendError(res, err.message, err.statusCode || 400, err.code);
     }
   }
 
   static async recordCash(req: Request, res: Response, next: NextFunction) {
     try {
-      const { bookingId } = req.body;
-      const payment = await PaymentsService.recordCashPayment(bookingId, req.user!.userId);
+      const { bookingId, notes } = req.body;
+      const payment = await PaymentsService.recordCashPayment(bookingId, req.user!.userId, notes);
       return sendSuccess(res, payment, 'Cash payment recorded');
     } catch (err: any) {
-      return sendError(res, err.message, 400);
+      return sendError(res, err.message, err.statusCode || 400, err.code);
     }
   }
 
   static async getByBooking(req: Request, res: Response, next: NextFunction) {
     try {
-      const payment = await PaymentsService.getPaymentByBooking(req.params.bookingId);
-      if (!payment) return sendError(res, 'Payment not found', 404);
+      const payment = await PaymentsService.getPaymentByBooking(
+        req.params.bookingId,
+        req.user!.userId,
+        req.user!.role
+      );
+      if (!payment) return sendError(res, 'Payment not found', 404, 'NOT_FOUND');
       return sendSuccess(res, payment);
-    } catch (err) {
-      next(err);
+    } catch (err: any) {
+      return sendError(res, err.message, err.statusCode || 400, err.code);
+    }
+  }
+
+  static async handleWebhook(req: Request, res: Response) {
+    try {
+      const signature = req.headers['x-razorpay-signature'] as string | undefined;
+      const rawBody = (req as any).rawBody || JSON.stringify(req.body);
+      const result = await PaymentsService.handleRazorpayWebhook(rawBody, signature, req.body);
+      return sendSuccess(res, result, 'Webhook processed');
+    } catch (err: any) {
+      return sendError(res, err.message, err.statusCode || 400, err.code || 'WEBHOOK_ERROR');
     }
   }
 }

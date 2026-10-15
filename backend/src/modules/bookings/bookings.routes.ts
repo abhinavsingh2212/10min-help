@@ -20,6 +20,7 @@ router.post('/', validateBody(createBookingSchema), BookingsController.create);
 router.get('/', BookingsController.listMyBookings);
 router.get('/:id', BookingsController.getById);
 router.post('/:id/cancel', validateBody(cancelBookingSchema), BookingsController.cancel);
+router.post('/:id/retry-dispatch', BookingsController.retryDispatch);
 router.post(
   '/:id/propose-quote',
   requireRole(UserRole.TECHNICIAN),

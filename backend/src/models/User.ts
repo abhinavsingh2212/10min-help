@@ -11,6 +11,8 @@ export interface IUser extends Document {
   lastLoginAt?: Date;
   emergencyContactPhone?: string;
   emergencyContactName?: string;
+  refreshTokenHash?: string;
+  tokenVersion: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -31,6 +33,8 @@ const UserSchema = new Schema<IUser>(
     lastLoginAt: { type: Date },
     emergencyContactPhone: { type: String, trim: true },
     emergencyContactName: { type: String, trim: true },
+    refreshTokenHash: { type: String, select: false },
+    tokenVersion: { type: Number, default: 0 },
   },
   { timestamps: true }
 );

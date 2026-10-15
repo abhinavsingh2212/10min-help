@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { AuthController } from './auth.controller';
 import { validateBody } from '../../middleware/validate';
-import { sendOtpSchema, verifyOtpSchema } from '@10min-help/shared';
+import { sendOtpSchema, verifyOtpSchema, updateProfileSchema } from '@10min-help/shared';
 import { authMiddleware } from '../../middleware/auth';
 
 const router = Router();
@@ -11,5 +11,8 @@ router.post('/verify-otp', validateBody(verifyOtpSchema), AuthController.verifyO
 router.post('/refresh', AuthController.refreshToken);
 router.post('/logout', authMiddleware, AuthController.logout);
 router.get('/me', authMiddleware, AuthController.getMe);
+router.patch('/profile', authMiddleware, validateBody(updateProfileSchema), AuthController.updateProfile);
+router.get('/notifications', authMiddleware, AuthController.getNotifications);
+router.patch('/notifications/:id/read', authMiddleware, AuthController.markNotificationRead);
 
 export const authRoutes = router;

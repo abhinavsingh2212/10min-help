@@ -23,6 +23,9 @@ export interface UserSummary {
   phone: string;
   email?: string;
   role: UserRole;
+  isActive?: boolean;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
   createdAt?: string;
 }
 
@@ -99,6 +102,7 @@ export interface BookingDTO {
   quotedPrice: number;
   approvedFinalAmount: number;
   isQuoteApprovedByCustomer: boolean;
+  quoteRevisionReason?: string;
   notes?: string;
   statusHistory: BookingStatusHistoryEntry[];
   paymentStatus: PaymentStatus;
@@ -177,4 +181,26 @@ export interface OperationalMetricsDTO {
   grossBookingValue: number;
   completedPaymentValue: number;
   technicianPayoutLiabilities: number;
+}
+
+export interface OperationalReportDTO {
+  metrics: OperationalMetricsDTO;
+  offerStats: {
+    totalOffers: number;
+    acceptedOffers: number;
+    rejectedOffers: number;
+    expiredOffers: number;
+    acceptanceRatePercent: number;
+  };
+  satisfactionStats: {
+    averageRating: number;
+    totalReviews: number;
+  };
+  serviceBreakdown: {
+    serviceName: string;
+    category: string;
+    count: number;
+    revenue: number;
+  }[];
+  generatedAt: string;
 }

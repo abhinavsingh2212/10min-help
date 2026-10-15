@@ -8,19 +8,51 @@ import {
   VehicleType,
 } from '../enums';
 
-// Phone regex: accepts any standard 10-15 digit phone number (with optional '+' country prefix)
-const phoneRegex = /^\+?[0-9]{7,15}$/;
+// Phone regex: accepts any standard 10-15 digit phone number (with optional '+' country prefix, spaces, or dashes)
+const phoneRegex = /^\+?[\d\s-]{7,18}$/;
+
+export function normalizePhoneNumber(rawPhone: string): string {
+  const cleaned = rawPhone.trim().replace(/[\s-()]/g, '');
+  if (/^\+91\d{10}$/.test(cleaned)) {
+    return cleaned.slice(3);
+  }
+  if (/^91\d{10}$/.test(cleaned)) {
+    return cleaned.slice(2);
+  }
+  if (/^0\d{10}$/.test(cleaned)) {
+    return cleaned.slice(1);
+  }
+  return cleaned;
+}
 
 export const sendOtpSchema = z.object({
-  phone: z.string().regex(phoneRegex, 'Please enter a valid 10-digit Indian phone number'),
+  phone: z
+    .string()
+    .transform(normalizePhoneNumber)
+    .refine((val) => /^\+?\d{7,15}$/.test(val), 'Please enter a valid 10-digit Indian phone number'),
   role: z.nativeEnum(UserRole).optional().default(UserRole.CUSTOMER),
 });
 
 export const verifyOtpSchema = z.object({
-  phone: z.string().regex(phoneRegex, 'Please enter a valid 10-digit Indian phone number'),
-  otp: z.string().length(6, 'OTP must be 6 digits'),
-  name: z.string().min(2, 'Name must have at least 2 characters').optional(),
+  phone: z
+    .string()
+    .transform(normalizePhoneNumber)
+    .refine((val) => /^\+?\d{7,15}$/.test(val), 'Please enter a valid 10-digit Indian phone number'),
+  otp: z.string().trim().length(6, 'OTP must be 6 digits'),
+  name: z.string().trim().min(2, 'Name must have at least 2 characters').optional(),
   role: z.nativeEnum(UserRole).optional(),
+});
+
+export const updateProfileSchema = z.object({
+  name: z.string().trim().min(2, 'Name must have at least 2 characters').max(100).optional(),
+  email: z.string().trim().email('Please enter a valid email address').optional().or(z.literal('')),
+  emergencyContactName: z.string().trim().max(100).optional(),
+  emergencyContactPhone: z
+    .string()
+    .trim()
+    .transform((v) => (v ? normalizePhoneNumber(v) : v))
+    .refine((v) => !v || /^\+?\d{7,15}$/.test(v), 'Please enter a valid emergency contact phone number')
+    .optional(),
 });
 
 export const locationCoordinatesSchema = z.object({
@@ -99,6 +131,11 @@ export const verifyPaymentSchema = z.object({
   signature: z.string().min(1),
 });
 
+export const recordCashPaymentSchema = z.object({
+  bookingId: z.string().min(1, 'Booking ID is required'),
+  notes: z.string().max(300).optional(),
+});
+
 export const createReviewSchema = z.object({
   bookingId: z.string().min(1, 'Booking ID is required'),
   rating: z.number().int().min(1).max(5),
@@ -126,4 +163,18 @@ export const adminServiceSchema = z.object({
   supportedVehicles: z.array(z.nativeEnum(VehicleType)).min(1),
   estimatedDurationMinutes: z.number().positive(),
   isActive: z.boolean().default(true),
+});
+
+export const adminUpdateServicePricingSchema = z.object({
+  name: z.string().min(3).optional(),
+  description: z.string().min(10).optional(),
+  inclusions: z.array(z.string()).optional(),
+  startingPrice: z
+    .object({
+      [VehicleType.BIKE]: z.number().min(0).optional(),
+      [VehicleType.CAR]: z.number().min(0).optional(),
+    })
+    .optional(),
+  estimatedDurationMinutes: z.number().positive().optional(),
+  isActive: z.boolean().optional(),
 });

@@ -59,14 +59,12 @@ const TechnicianSchema = new Schema<ITechnician>(
       type: {
         type: String,
         enum: ['Point'],
-        default: 'Point',
       },
       coordinates: {
         type: [Number], // [longitude, latitude]
-        default: [77.5946, 12.9716], // Default center (e.g. Bangalore)
       },
       address: { type: String },
-      lastUpdatedAt: { type: Date, default: Date.now },
+      lastUpdatedAt: { type: Date },
     },
     ratingAverage: { type: Number, default: 5.0, min: 1, max: 5 },
     ratingCount: { type: Number, default: 0 },
@@ -78,8 +76,8 @@ const TechnicianSchema = new Schema<ITechnician>(
   { timestamps: true }
 );
 
-// 2dsphere index for geospatial queries
-TechnicianSchema.index({ 'currentLocation.coordinates': '2dsphere' });
+// 2dsphere index for geospatial queries (sparse so technicians without initial GPS coordinates are allowed)
+TechnicianSchema.index({ 'currentLocation.coordinates': '2dsphere' }, { sparse: true });
 TechnicianSchema.index({ isOnline: 1, verificationStatus: 1 });
 
 export const TechnicianModel = mongoose.model<ITechnician>('Technician', TechnicianSchema);

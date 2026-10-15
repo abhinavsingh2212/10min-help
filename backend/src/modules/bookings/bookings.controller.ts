@@ -1,7 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { BookingsService } from './bookings.service';
 import { sendSuccess, sendError } from '../../utils/response';
-import { UserRole } from '@10min-help/shared';
 
 export class BookingsController {
   static async create(req: Request, res: Response, next: NextFunction) {
@@ -9,7 +8,7 @@ export class BookingsController {
       const booking = await BookingsService.createBooking(req.user!.userId, req.body);
       return sendSuccess(res, booking, 'Booking created and dispatch initiated', 201);
     } catch (err: any) {
-      return sendError(res, err.message, 400);
+      return sendError(res, err.message, err.statusCode || 400, err.code);
     }
   }
 
@@ -18,7 +17,7 @@ export class BookingsController {
       const booking = await BookingsService.getBookingById(req.params.id, req.user!.userId, req.user!.role);
       return sendSuccess(res, booking);
     } catch (err: any) {
-      return sendError(res, err.message, 404);
+      return sendError(res, err.message, err.statusCode || 404, err.code);
     }
   }
 
@@ -42,7 +41,20 @@ export class BookingsController {
       );
       return sendSuccess(res, booking, 'Booking cancelled');
     } catch (err: any) {
-      return sendError(res, err.message, 400);
+      return sendError(res, err.message, err.statusCode || 400, err.code);
+    }
+  }
+
+  static async retryDispatch(req: Request, res: Response, next: NextFunction) {
+    try {
+      const booking = await BookingsService.retryDispatch(
+        req.params.id,
+        req.user!.userId,
+        req.user!.role
+      );
+      return sendSuccess(res, booking, 'Dispatch search re-initiated');
+    } catch (err: any) {
+      return sendError(res, err.message, err.statusCode || 400, err.code);
     }
   }
 
@@ -57,7 +69,7 @@ export class BookingsController {
       );
       return sendSuccess(res, booking, 'Revised quotation proposed for customer approval');
     } catch (err: any) {
-      return sendError(res, err.message, 400);
+      return sendError(res, err.message, err.statusCode || 400, err.code);
     }
   }
 
@@ -72,7 +84,7 @@ export class BookingsController {
       );
       return sendSuccess(res, booking, approved ? 'Quote approved' : 'Quote rejected');
     } catch (err: any) {
-      return sendError(res, err.message, 400);
+      return sendError(res, err.message, err.statusCode || 400, err.code);
     }
   }
 
@@ -87,7 +99,7 @@ export class BookingsController {
       );
       return sendSuccess(res, booking, `Booking status updated to ${status}`);
     } catch (err: any) {
-      return sendError(res, err.message, 400);
+      return sendError(res, err.message, err.statusCode || 400, err.code);
     }
   }
 }

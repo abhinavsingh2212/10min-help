@@ -9,6 +9,7 @@ const router = Router();
 router.use(authMiddleware);
 router.use(requireRole(UserRole.TECHNICIAN));
 
+router.get('/offers/pending', DispatchController.getPendingOffer);
 router.post('/offers/:offerId/accept', DispatchController.acceptOffer);
 router.post('/offers/:offerId/reject', DispatchController.rejectOffer);
 

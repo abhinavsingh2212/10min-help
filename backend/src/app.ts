@@ -20,9 +20,27 @@ export function createApp(): Application {
 
   // Security and utilities middleware
   app.use(helmet({ contentSecurityPolicy: false }));
-  app.use(cors({ origin: true, credentials: true }));
+  app.use(
+    cors({
+      origin:
+        process.env.NODE_ENV === 'production'
+          ? [
+              process.env.CUSTOMER_WEB_URL || 'http://localhost:3000',
+              process.env.ADMIN_WEB_URL || 'http://localhost:3001',
+            ]
+          : true,
+      credentials: true,
+    })
+  );
   app.use(morgan('dev'));
-  app.use(express.json());
+  app.use(
+    express.json({
+      limit: '1mb',
+      verify: (req: any, _res, buf) => {
+        req.rawBody = buf.toString('utf8');
+      },
+    })
+  );
   app.use(express.urlencoded({ extended: true }));
 
   // Health checks

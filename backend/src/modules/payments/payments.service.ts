@@ -2,8 +2,15 @@ import mongoose from 'mongoose';
 import { BookingModel } from '../../models/Booking';
 import { PaymentModel, IPayment } from '../../models/Payment';
 import { TechnicianModel } from '../../models/Technician';
-import { PaymentMethod, PaymentStatus, SOCKET_EVENTS } from '@10min-help/shared';
-import { verifyHmacSignature } from '../../utils/crypto';
+import { AuditLogModel } from '../../models/AuditLog';
+import {
+  BookingStatus,
+  PaymentMethod,
+  PaymentStatus,
+  SOCKET_EVENTS,
+  UserRole,
+} from '@10min-help/shared';
+import { verifyHmacSignature, verifyWebhookSignature } from '../../utils/crypto';
 import { ENV } from '../../config/env';
 import { getSocketServer } from '../../sockets';
 import { logger } from '../../config/logger';
@@ -13,11 +20,60 @@ export class PaymentsService {
     bookingId: string,
     customerId: string,
     method: PaymentMethod
-  ): Promise<{ orderId: string; amount: number; currency: string; keyId: string }> {
-    const booking = await BookingModel.findOne({ _id: bookingId, customer: customerId });
-    if (!booking) throw new Error('Booking not found');
+  ): Promise<{ orderId: string; amount: number; currency: string; keyId: string; provider: string }> {
+    if (!mongoose.Types.ObjectId.isValid(bookingId)) {
+      const err: any = new Error('Invalid booking ID');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const booking = await BookingModel.findById(bookingId);
+    if (!booking) {
+      const err: any = new Error('Booking not found');
+      err.statusCode = 404;
+      throw err;
+    }
+
+    if (booking.customer.toString() !== customerId) {
+      const err: any = new Error('Access denied: you can only create payments for your own bookings.');
+      err.statusCode = 403;
+      err.code = 'FORBIDDEN';
+      throw err;
+    }
+
+    if (booking.status === BookingStatus.CANCELLED || booking.status === BookingStatus.UNFULFILLED) {
+      const err: any = new Error(`Cannot initiate payment for a ${booking.status} booking.`);
+      err.statusCode = 400;
+      throw err;
+    }
+
+    if (booking.paymentStatus === PaymentStatus.PAID) {
+      const err: any = new Error('Payment has already been completed for this booking.');
+      err.statusCode = 409;
+      err.code = 'ALREADY_PAID';
+      throw err;
+    }
 
     const amount = booking.approvedFinalAmount || booking.quotedPrice;
+
+    // Reuse existing pending order for the same booking, amount, and method to prevent duplicate orders
+    const existingPending = await PaymentModel.findOne({
+      booking: booking._id,
+      customer: customerId,
+      status: PaymentStatus.PENDING,
+      amount,
+      method,
+    }).sort({ createdAt: -1 });
+
+    if (existingPending && existingPending.providerOrderId) {
+      return {
+        orderId: existingPending.providerOrderId,
+        amount: existingPending.amount,
+        currency: existingPending.currency,
+        keyId: ENV.PAYMENT_KEY_ID,
+        provider: existingPending.provider,
+      };
+    }
 
     // Generate provider order ID (Razorpay format: order_xxxxx)
     const providerOrderId = `order_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
@@ -38,6 +94,7 @@ export class PaymentsService {
       amount,
       currency: 'INR',
       keyId: ENV.PAYMENT_KEY_ID,
+      provider: ENV.PAYMENT_PROVIDER,
     };
   }
 
@@ -48,20 +105,76 @@ export class PaymentsService {
     providerPaymentId: string,
     signature: string
   ): Promise<IPayment> {
-    let payment = await PaymentModel.findOne({
+    if (!mongoose.Types.ObjectId.isValid(bookingId)) {
+      const err: any = new Error('Invalid booking ID');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const booking = await BookingModel.findById(bookingId);
+    if (!booking) {
+      const err: any = new Error('Booking not found');
+      err.statusCode = 404;
+      throw err;
+    }
+
+    // Enforce booking ownership
+    if (booking.customer.toString() !== customerId) {
+      const err: any = new Error('Access denied: you are not authorized to verify payment for this booking.');
+      err.statusCode = 403;
+      err.code = 'FORBIDDEN';
+      throw err;
+    }
+
+    // Require exact providerOrderId match (never fall back to arbitrary pending orders)
+    const payment = await PaymentModel.findOne({
       booking: bookingId,
       providerOrderId,
     });
 
     if (!payment) {
-      // Fallback: find latest pending payment for this booking
-      payment = await PaymentModel.findOne({
-        booking: bookingId,
-        status: PaymentStatus.PENDING,
-      }).sort({ createdAt: -1 });
+      const err: any = new Error('Payment order not found for this booking.');
+      err.statusCode = 404;
+      err.code = 'ORDER_NOT_FOUND';
+      throw err;
     }
 
-    if (!payment) throw new Error('Payment record not found for this order.');
+    // Idempotency & replay check
+    if (payment.status === PaymentStatus.PAID) {
+      if (payment.providerPaymentId === providerPaymentId) {
+        return payment;
+      }
+      const err: any = new Error('This payment order has already been settled with another transaction.');
+      err.statusCode = 409;
+      err.code = 'DUPLICATE_PAYMENT';
+      throw err;
+    }
+
+    if (booking.paymentStatus === PaymentStatus.PAID) {
+      const err: any = new Error('Booking is already marked as paid.');
+      err.statusCode = 409;
+      err.code = 'ALREADY_PAID';
+      throw err;
+    }
+
+    // Prevent replaying the same providerPaymentId across different orders
+    const replayedPayment = await PaymentModel.findOne({
+      providerPaymentId,
+      status: PaymentStatus.PAID,
+      _id: { $ne: payment._id },
+    });
+    if (replayedPayment) {
+      const err: any = new Error('Duplicate or replayed payment ID detected.');
+      err.statusCode = 409;
+      err.code = 'REPLAYED_PAYMENT_ID';
+      throw err;
+    }
+
+    // Verify expected amount matches booking's current approved amount
+    const expectedAmount = booking.approvedFinalAmount || booking.quotedPrice;
+    if (payment.amount !== expectedAmount) {
+      payment.amount = expectedAmount;
+    }
 
     // Cryptographic signature check
     const isValid = verifyHmacSignature(providerOrderId, providerPaymentId, signature);
@@ -69,7 +182,10 @@ export class PaymentsService {
       payment.status = PaymentStatus.FAILED;
       payment.failureReason = 'Cryptographic signature mismatch';
       await payment.save();
-      throw new Error('Payment signature verification failed. Potential tampering detected.');
+      const err: any = new Error('Payment signature verification failed. Potential tampering detected.');
+      err.statusCode = 400;
+      err.code = 'INVALID_SIGNATURE';
+      throw err;
     }
 
     payment.status = PaymentStatus.PAID;
@@ -79,32 +195,90 @@ export class PaymentsService {
     await payment.save();
 
     // Update booking payment state
-    await BookingModel.findByIdAndUpdate(bookingId, {
-      paymentStatus: PaymentStatus.PAID,
-      paymentMethod: payment.method,
+    booking.paymentStatus = PaymentStatus.PAID;
+    booking.paymentMethod = payment.method;
+    await booking.save();
+
+    await AuditLogModel.create({
+      actorId: new mongoose.Types.ObjectId(customerId),
+      actorRole: UserRole.CUSTOMER,
+      action: 'PAYMENT_VERIFIED',
+      entityType: 'Payment',
+      entityId: payment._id.toString(),
+      metadata: {
+        bookingId,
+        providerOrderId,
+        providerPaymentId,
+        amount: payment.amount,
+        method: payment.method,
+      },
     });
 
     // Notify room
     const io = getSocketServer();
     if (io) {
-      io.to(`booking:${bookingId}`).emit(SOCKET_EVENTS.PAYMENT_UPDATED, {
+      const payload = {
         bookingId,
         paymentStatus: PaymentStatus.PAID,
         amount: payment.amount,
         paymentId: providerPaymentId,
-      });
+        method: payment.method,
+      };
+      io.to(`booking:${bookingId}`).emit(SOCKET_EVENTS.PAYMENT_UPDATED, payload);
+      io.to('admin:dispatch').emit(SOCKET_EVENTS.PAYMENT_UPDATED, payload);
     }
 
-    logger.info(`[Payments] Verified payment ${providerPaymentId} for booking ${bookingId} (₹${payment.amount})`);
+    logger.info(
+      `[Payments] Verified payment ${providerPaymentId} for booking ${bookingId} (₹${payment.amount})`
+    );
     return payment;
   }
 
-  static async recordCashPayment(bookingId: string, technicianUserId: string): Promise<IPayment> {
+  static async recordCashPayment(
+    bookingId: string,
+    technicianUserId: string,
+    notes?: string
+  ): Promise<IPayment> {
+    if (!mongoose.Types.ObjectId.isValid(bookingId)) {
+      const err: any = new Error('Invalid booking ID');
+      err.statusCode = 400;
+      throw err;
+    }
+
     const tech = await TechnicianModel.findOne({ user: technicianUserId });
-    if (!tech) throw new Error('Technician profile not found');
+    if (!tech) {
+      const err: any = new Error('Technician profile not found');
+      err.statusCode = 404;
+      throw err;
+    }
 
     const booking = await BookingModel.findOne({ _id: bookingId, technician: tech._id });
-    if (!booking) throw new Error('Booking not found or not assigned to you');
+    if (!booking) {
+      const err: any = new Error('Booking not found or not assigned to you');
+      err.statusCode = 403;
+      err.code = 'FORBIDDEN';
+      throw err;
+    }
+
+    if (booking.status === BookingStatus.CANCELLED || booking.status === BookingStatus.UNFULFILLED) {
+      const err: any = new Error(`Cannot record cash payment for a ${booking.status} booking.`);
+      err.statusCode = 400;
+      throw err;
+    }
+
+    if (booking.paymentStatus === PaymentStatus.PAID) {
+      const existingPaid = await PaymentModel.findOne({
+        booking: booking._id,
+        status: PaymentStatus.PAID,
+      });
+      if (existingPaid && existingPaid.method === PaymentMethod.CASH) {
+        return existingPaid;
+      }
+      const err: any = new Error('Booking has already been paid.');
+      err.statusCode = 409;
+      err.code = 'ALREADY_PAID';
+      throw err;
+    }
 
     const amount = booking.approvedFinalAmount || booking.quotedPrice;
 
@@ -124,20 +298,112 @@ export class PaymentsService {
     booking.paymentMethod = PaymentMethod.CASH;
     await booking.save();
 
+    await AuditLogModel.create({
+      actorId: tech.user,
+      actorRole: UserRole.TECHNICIAN,
+      action: 'CASH_PAYMENT_RECORDED',
+      entityType: 'Payment',
+      entityId: payment._id.toString(),
+      metadata: { bookingId, amount, notes },
+    });
+
     const io = getSocketServer();
     if (io) {
-      io.to(`booking:${bookingId}`).emit(SOCKET_EVENTS.PAYMENT_UPDATED, {
+      const payload = {
         bookingId,
         paymentStatus: PaymentStatus.PAID,
         amount,
         method: PaymentMethod.CASH,
-      });
+      };
+      io.to(`booking:${bookingId}`).emit(SOCKET_EVENTS.PAYMENT_UPDATED, payload);
+      io.to('admin:dispatch').emit(SOCKET_EVENTS.PAYMENT_UPDATED, payload);
     }
 
     return payment;
   }
 
-  static async getPaymentByBooking(bookingId: string): Promise<IPayment | null> {
+  static async getPaymentByBooking(
+    bookingId: string,
+    userId: string,
+    role: UserRole
+  ): Promise<IPayment | null> {
+    if (!mongoose.Types.ObjectId.isValid(bookingId)) {
+      const err: any = new Error('Invalid booking ID');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const booking = await BookingModel.findById(bookingId).populate('technician');
+    if (!booking) {
+      const err: any = new Error('Booking not found');
+      err.statusCode = 404;
+      throw err;
+    }
+
+    const isCustomer = booking.customer.toString() === userId;
+    const isAssignedTech = Boolean(
+      booking.technician &&
+        ((booking.technician as any).user?._id?.toString() === userId ||
+          (booking.technician as any).user?.toString() === userId)
+    );
+    const isAdmin = role === UserRole.ADMIN || role === UserRole.DISPATCHER;
+
+    if (!isCustomer && !isAssignedTech && !isAdmin) {
+      const err: any = new Error('Access denied to payment details for this booking.');
+      err.statusCode = 403;
+      err.code = 'FORBIDDEN';
+      throw err;
+    }
+
     return PaymentModel.findOne({ booking: bookingId }).sort({ createdAt: -1 });
+  }
+
+  static async handleRazorpayWebhook(
+    rawBody: string,
+    signature: string | undefined,
+    payload: any
+  ): Promise<{ processed: boolean; event?: string }> {
+    if (!signature || !verifyWebhookSignature(rawBody, signature)) {
+      const err: any = new Error('Invalid webhook signature');
+      err.statusCode = 401;
+      err.code = 'INVALID_WEBHOOK_SIGNATURE';
+      throw err;
+    }
+
+    const event = payload?.event;
+    const entity = payload?.payload?.payment?.entity;
+    const providerOrderId = entity?.order_id;
+    const providerPaymentId = entity?.id;
+
+    if (!providerOrderId) {
+      return { processed: true, event };
+    }
+
+    const payment = await PaymentModel.findOne({ providerOrderId });
+    if (!payment) {
+      return { processed: false, event };
+    }
+
+    if (event === 'payment.captured') {
+      if (payment.status !== PaymentStatus.PAID) {
+        payment.status = PaymentStatus.PAID;
+        payment.providerPaymentId = providerPaymentId;
+        payment.paidAt = new Date();
+        await payment.save();
+
+        await BookingModel.findByIdAndUpdate(payment.booking, {
+          paymentStatus: PaymentStatus.PAID,
+          paymentMethod: payment.method,
+        });
+      }
+    } else if (event === 'payment.failed') {
+      if (payment.status === PaymentStatus.PENDING) {
+        payment.status = PaymentStatus.FAILED;
+        payment.failureReason = entity?.error_description || 'Gateway payment failed';
+        await payment.save();
+      }
+    }
+
+    return { processed: true, event };
   }
 }

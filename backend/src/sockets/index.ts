@@ -1,18 +1,26 @@
 import { Server as HttpServer } from 'http';
 import { Server as SocketIOServer, Socket } from 'socket.io';
+import mongoose from 'mongoose';
 import { verifyAccessToken, TokenPayload } from '../utils/crypto';
 import { logger } from '../config/logger';
 import { ENV } from '../config/env';
 import { UserRole } from '@10min-help/shared';
 import { TechnicianModel } from '../models/Technician';
+import { BookingModel } from '../models/Booking';
 
 let io: SocketIOServer | null = null;
 
 export function initializeSockets(httpServer: HttpServer): SocketIOServer {
+  const allowedOrigins =
+    ENV.NODE_ENV === 'production'
+      ? [ENV.CUSTOMER_WEB_URL, ENV.ADMIN_WEB_URL].filter(Boolean)
+      : true;
+
   io = new SocketIOServer(httpServer, {
     cors: {
-      origin: '*', // Allow web and mobile clients
+      origin: allowedOrigins,
       methods: ['GET', 'POST'],
+      credentials: true,
     },
     pingInterval: 10000,
     pingTimeout: 5000,
@@ -21,13 +29,10 @@ export function initializeSockets(httpServer: HttpServer): SocketIOServer {
   // Authentication Middleware for Socket.IO
   io.use(async (socket: Socket, next) => {
     try {
-      const token = socket.handshake.auth?.token || socket.handshake.headers?.authorization?.replace('Bearer ', '');
+      const token =
+        socket.handshake.auth?.token ||
+        socket.handshake.headers?.authorization?.replace('Bearer ', '');
       if (!token) {
-        // Allow unauthenticated connections if in development, but tag as guest
-        if (ENV.NODE_ENV !== 'production') {
-          socket.data.user = { userId: 'anonymous', role: UserRole.CUSTOMER };
-          return next();
-        }
         return next(new Error('Authentication token required for Socket connection'));
       }
 
@@ -51,7 +56,9 @@ export function initializeSockets(httpServer: HttpServer): SocketIOServer {
 
   io.on('connection', (socket: Socket) => {
     const user: TokenPayload = socket.data.user;
-    logger.info(`[Sockets] Client connected: socketId=${socket.id}, user=${user?.userId}, role=${user?.role}`);
+    logger.info(
+      `[Sockets] Client connected: socketId=${socket.id}, user=${user?.userId}, role=${user?.role}`
+    );
 
     // Join personal user room
     if (user?.userId) {
@@ -70,15 +77,76 @@ export function initializeSockets(httpServer: HttpServer): SocketIOServer {
       logger.info(`[Sockets] Admin joined admin:dispatch room`);
     }
 
-    // Handle joining specific booking room
-    socket.on('join:booking', ({ bookingId }: { bookingId: string }) => {
-      if (bookingId) {
-        socket.join(`booking:${bookingId}`);
-        logger.info(`[Sockets] Socket ${socket.id} joined room booking:${bookingId}`);
-      }
-    });
+    // Handle joining specific booking room with strict object-level authorization
+    socket.on(
+      'join:booking',
+      async (
+        payload: { bookingId?: string } | undefined,
+        callback?: (response: { success: boolean; error?: string; room?: string }) => void
+      ) => {
+        try {
+          const bookingId = payload?.bookingId;
+          if (!bookingId || !mongoose.Types.ObjectId.isValid(bookingId)) {
+            socket.emit('socket:error', {
+              code: 'INVALID_BOOKING_ID',
+              message: 'Valid bookingId is required to join booking room.',
+            });
+            if (typeof callback === 'function') {
+              callback({ success: false, error: 'INVALID_BOOKING_ID' });
+            }
+            return;
+          }
 
-    socket.on('leave:booking', ({ bookingId }: { bookingId: string }) => {
+          const booking = await BookingModel.findById(bookingId).select('customer technician');
+          if (!booking) {
+            socket.emit('socket:error', {
+              code: 'NOT_FOUND',
+              message: 'Booking not found.',
+            });
+            if (typeof callback === 'function') {
+              callback({ success: false, error: 'NOT_FOUND' });
+            }
+            return;
+          }
+
+          const isCustomer = booking.customer.toString() === user?.userId;
+          const isAssignedTech = Boolean(
+            booking.technician &&
+              socket.data.technicianId &&
+              booking.technician.toString() === socket.data.technicianId
+          );
+          const isAdmin =
+            user?.role === UserRole.ADMIN || user?.role === UserRole.DISPATCHER;
+
+          if (!isCustomer && !isAssignedTech && !isAdmin) {
+            logger.warn(
+              `[Sockets] Unauthorized join:booking blocked: user=${user?.userId} booking=${bookingId}`
+            );
+            socket.emit('socket:error', {
+              code: 'FORBIDDEN',
+              message: 'You are not authorized to subscribe to this booking room.',
+            });
+            if (typeof callback === 'function') {
+              callback({ success: false, error: 'FORBIDDEN' });
+            }
+            return;
+          }
+
+          await socket.join(`booking:${bookingId}`);
+          logger.info(`[Sockets] Socket ${socket.id} joined authorized room booking:${bookingId}`);
+          if (typeof callback === 'function') {
+            callback({ success: true, room: `booking:${bookingId}` });
+          }
+        } catch (err: any) {
+          logger.error(`[Sockets] Error in join:booking: ${err.message}`);
+          if (typeof callback === 'function') {
+            callback({ success: false, error: 'INTERNAL_ERROR' });
+          }
+        }
+      }
+    );
+
+    socket.on('leave:booking', ({ bookingId }: { bookingId?: string } = {}) => {
       if (bookingId) {
         socket.leave(`booking:${bookingId}`);
       }

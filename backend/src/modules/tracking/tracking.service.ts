@@ -1,9 +1,9 @@
+import mongoose from 'mongoose';
 import { BookingModel } from '../../models/Booking';
 import { TechnicianModel } from '../../models/Technician';
-import { BookingStatus, SOCKET_EVENTS } from '@10min-help/shared';
+import { BookingStatus, SOCKET_EVENTS, UserRole } from '@10min-help/shared';
 import { calculateHaversineDistanceKm, estimateRoadEtaMinutes } from '../../utils/distance';
 import { getSocketServer } from '../../sockets';
-import { logger } from '../../config/logger';
 
 export class TrackingService {
   static async updateLocation(
@@ -11,7 +11,11 @@ export class TrackingService {
     coords: { latitude: number; longitude: number; address?: string; heading?: number }
   ) {
     const tech = await TechnicianModel.findOne({ user: technicianUserId });
-    if (!tech) throw new Error('Technician not found');
+    if (!tech) {
+      const err: any = new Error('Technician not found');
+      err.statusCode = 404;
+      throw err;
+    }
 
     // Update technician's current location
     tech.currentLocation = {
@@ -84,9 +88,37 @@ export class TrackingService {
     };
   }
 
-  static async getBookingTracking(bookingId: string) {
+  static async getBookingTracking(bookingId: string, userId: string, role: UserRole) {
+    if (!mongoose.Types.ObjectId.isValid(bookingId)) {
+      const err: any = new Error('Invalid booking identifier');
+      err.statusCode = 400;
+      err.code = 'INVALID_ID';
+      throw err;
+    }
+
     const booking = await BookingModel.findById(bookingId).populate('technician');
-    if (!booking) throw new Error('Booking not found');
+    if (!booking) {
+      const err: any = new Error('Booking not found');
+      err.statusCode = 404;
+      err.code = 'NOT_FOUND';
+      throw err;
+    }
+
+    // Enforce object-level authorization: customer owner, assigned technician, or admin/dispatcher
+    const isCustomer = booking.customer.toString() === userId;
+    const isAssignedTech = Boolean(
+      booking.technician &&
+        ((booking.technician as any).user?._id?.toString() === userId ||
+          (booking.technician as any).user?.toString() === userId)
+    );
+    const isAdmin = role === UserRole.ADMIN || role === UserRole.DISPATCHER;
+
+    if (!isCustomer && !isAssignedTech && !isAdmin) {
+      const err: any = new Error('Access denied: you are not authorized to view tracking for this booking.');
+      err.statusCode = 403;
+      err.code = 'FORBIDDEN';
+      throw err;
+    }
 
     return {
       bookingId: booking._id,
@@ -98,6 +130,7 @@ export class TrackingService {
       },
       technicianLocation: booking.technicianLocation,
       estimatedEtaMinutes: booking.estimatedEtaMinutes,
+      routingMode: 'heuristic_haversine_urban_eta',
     };
   }
 }
