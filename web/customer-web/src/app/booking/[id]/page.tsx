@@ -16,6 +16,7 @@ import {
   Wrench,
   XCircle,
   Share2,
+  FileText,
 } from 'lucide-react';
 import {
   bookingsApi,
@@ -458,6 +459,21 @@ export default function BookingDetailPage() {
                   <p className="text-[11px] text-gray-400 text-center">
                     Or pay cash directly to the mechanic upon completion.
                   </p>
+                </div>
+              )}
+
+              {/* View / Print Tax Invoice Button when paid */}
+              {booking.paymentStatus === PaymentStatus.PAID && (
+                <div className="pt-2">
+                  <a
+                    href={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api/v1'}/bookings/${booking._id}/invoice?format=html`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3 rounded-xl text-xs flex items-center justify-center gap-2 shadow-sm transition-all"
+                  >
+                    <FileText className="w-4 h-4 text-brand-400" />
+                    <span>View &amp; Print Tax Invoice (GST)</span>
+                  </a>
                 </div>
               )}
             </div>

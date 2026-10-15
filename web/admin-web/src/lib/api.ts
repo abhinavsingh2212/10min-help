@@ -83,6 +83,7 @@ export const adminApi = {
     }),
 
   // Services Pricing
+  listServices: () => adminApiRequest('/services'),
   updateServicePricing: (id: string, startingPrice: any, isActive?: boolean) =>
     adminApiRequest(`/admin/services/${id}`, {
       method: 'PATCH',

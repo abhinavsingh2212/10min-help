@@ -86,11 +86,17 @@ export default function AdminDashboardPage() {
           </div>
           <div>
             <div className="text-3xl font-black text-slate-900">
-              {metrics?.tenMinuteArrivalRatePercent || 92}%
+              {metrics?.tenMinuteArrivalRatePercent !== null && metrics?.tenMinuteArrivalRatePercent !== undefined
+                ? `${metrics.tenMinuteArrivalRatePercent}%`
+                : 'N/A'}
             </div>
             <div className="text-[11px] text-emerald-600 font-semibold mt-1 flex items-center gap-1">
               <TrendingUp className="w-3.5 h-3.5" />
-              <span>Target: &gt;90% in pilot radius</span>
+              <span>
+                {metrics?.tenMinuteArrivalRatePercent !== null && metrics?.tenMinuteArrivalRatePercent !== undefined
+                  ? 'Target: >90% in pilot radius'
+                  : 'Awaiting completed dispatches'}
+              </span>
             </div>
           </div>
         </div>
@@ -105,10 +111,18 @@ export default function AdminDashboardPage() {
           </div>
           <div>
             <div className="text-3xl font-black text-slate-900">
-              {metrics?.averageResponseTimeMinutes || 8.5} <span className="text-sm font-semibold text-gray-500">mins</span>
+              {metrics?.averageResponseTimeMinutes !== null && metrics?.averageResponseTimeMinutes !== undefined ? (
+                <>
+                  {metrics.averageResponseTimeMinutes} <span className="text-sm font-semibold text-gray-500">mins</span>
+                </>
+              ) : (
+                'N/A'
+              )}
             </div>
             <div className="text-[11px] text-gray-500 mt-1">
-              From request to physical arrival
+              {metrics?.averageResponseTimeMinutes !== null && metrics?.averageResponseTimeMinutes !== undefined
+                ? 'From request to physical arrival'
+                : 'No completed trips yet'}
             </div>
           </div>
         </div>

@@ -1,7 +1,9 @@
 import { AuthService } from '../../src/modules/auth/auth.service';
-import { generateSecureOtp, hashToken } from '../../src/utils/crypto';
+import { generateSecureOtp, hashToken, generateAccessToken } from '../../src/utils/crypto';
 import { UserModel } from '../../src/models/User';
 import { UserRole } from '@10min-help/shared';
+import { authMiddleware } from '../../src/middleware/auth';
+import mongoose from 'mongoose';
 
 describe('Auth Security & Hardening Unit Tests', () => {
   beforeEach(() => {
@@ -84,5 +86,77 @@ describe('Auth Security & Hardening Unit Tests', () => {
     expect(hashed).toHaveLength(64); // SHA-256 is 64 hex characters
     expect(hashToken(token)).toBe(hashed); // Idempotent
     expect(hashToken('different_token')).not.toBe(hashed);
+  });
+
+  it('should reject requests via authMiddleware when user account is deactivated in DB', async () => {
+    const userId = new mongoose.Types.ObjectId().toString();
+    const token = generateAccessToken({
+      userId,
+      role: UserRole.CUSTOMER,
+      phone: '9876543210',
+      tokenVersion: 0,
+    });
+
+    const mockReq: any = {
+      headers: { authorization: `Bearer ${token}` },
+    };
+    const mockRes: any = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+    };
+    const mockNext = jest.fn();
+
+    // User is deactivated
+    jest.spyOn(UserModel, 'findById').mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue({ _id: userId, isActive: false, tokenVersion: 0, role: UserRole.CUSTOMER }),
+      }),
+    } as any);
+
+    await authMiddleware(mockReq, mockRes, mockNext);
+    expect(mockRes.status).toHaveBeenCalledWith(403);
+    expect(mockRes.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        success: false,
+        error: expect.objectContaining({ code: 'ACCOUNT_DEACTIVATED' }),
+      })
+    );
+    expect(mockNext).not.toHaveBeenCalled();
+  });
+
+  it('should reject requests via authMiddleware when tokenVersion does not match (session revoked)', async () => {
+    const userId = new mongoose.Types.ObjectId().toString();
+    const token = generateAccessToken({
+      userId,
+      role: UserRole.CUSTOMER,
+      phone: '9876543210',
+      tokenVersion: 1, // Stale tokenVersion
+    });
+
+    const mockReq: any = {
+      headers: { authorization: `Bearer ${token}` },
+    };
+    const mockRes: any = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+    };
+    const mockNext = jest.fn();
+
+    // User's tokenVersion was bumped to 2 (revoked)
+    jest.spyOn(UserModel, 'findById').mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue({ _id: userId, isActive: true, tokenVersion: 2, role: UserRole.CUSTOMER }),
+      }),
+    } as any);
+
+    await authMiddleware(mockReq, mockRes, mockNext);
+    expect(mockRes.status).toHaveBeenCalledWith(401);
+    expect(mockRes.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        success: false,
+        error: expect.objectContaining({ code: 'SESSION_REVOKED' }),
+      })
+    );
+    expect(mockNext).not.toHaveBeenCalled();
   });
 });

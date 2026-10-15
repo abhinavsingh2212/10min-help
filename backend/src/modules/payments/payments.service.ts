@@ -8,6 +8,7 @@ import {
   PaymentMethod,
   PaymentStatus,
   SOCKET_EVENTS,
+  TechnicianVerificationStatus,
   UserRole,
 } from '@10min-help/shared';
 import { verifyHmacSignature, verifyWebhookSignature } from '../../utils/crypto';
@@ -257,8 +258,13 @@ export class PaymentsService {
 
     // Verify expected amount matches booking's current approved amount
     const expectedAmount = booking.approvedFinalAmount || booking.quotedPrice;
-    if (payment.amount !== expectedAmount) {
-      payment.amount = expectedAmount;
+    if (expectedAmount && payment.amount !== expectedAmount) {
+      const err: any = new Error(
+        `Payment amount mismatch: stored payment amount (₹${payment.amount}) does not match current required booking amount (₹${expectedAmount}). Re-initiate checkout.`
+      );
+      err.statusCode = 409;
+      err.code = 'PAYMENT_AMOUNT_MISMATCH';
+      throw err;
     }
 
     // Cryptographic signature check
@@ -334,6 +340,13 @@ export class PaymentsService {
     if (!tech) {
       const err: any = new Error('Technician profile not found');
       err.statusCode = 404;
+      throw err;
+    }
+
+    if (tech.verificationStatus !== TechnicianVerificationStatus.VERIFIED) {
+      const err: any = new Error('Only verified technicians are permitted to record cash payments.');
+      err.statusCode = 403;
+      err.code = 'UNVERIFIED_TECHNICIAN';
       throw err;
     }
 

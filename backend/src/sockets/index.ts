@@ -7,6 +7,7 @@ import { ENV } from '../config/env';
 import { UserRole } from '@10min-help/shared';
 import { TechnicianModel } from '../models/Technician';
 import { BookingModel } from '../models/Booking';
+import { UserModel } from '../models/User';
 
 let io: SocketIOServer | null = null;
 
@@ -37,10 +38,30 @@ export function initializeSockets(httpServer: HttpServer): SocketIOServer {
       }
 
       const payload = verifyAccessToken(token);
-      socket.data.user = payload;
+
+      // Verify user account exists, is active, and session is not revoked
+      const user = await UserModel.findById(payload.userId).select('isActive tokenVersion role').lean();
+      if (!user) {
+        return next(new Error('User account not found'));
+      }
+      if (!user.isActive) {
+        return next(new Error('User account has been suspended or deactivated'));
+      }
+      if (
+        payload.tokenVersion !== undefined &&
+        user.tokenVersion !== undefined &&
+        payload.tokenVersion !== user.tokenVersion
+      ) {
+        return next(new Error('Socket session revoked'));
+      }
+
+      socket.data.user = {
+        ...payload,
+        role: user.role || payload.role,
+      };
 
       // If technician, attach technician ID
-      if (payload.role === UserRole.TECHNICIAN) {
+      if (socket.data.user.role === UserRole.TECHNICIAN) {
         const tech = await TechnicianModel.findOne({ user: payload.userId });
         if (tech) {
           socket.data.technicianId = tech._id.toString();

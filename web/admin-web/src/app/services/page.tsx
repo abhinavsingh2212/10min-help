@@ -1,12 +1,48 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Sliders, CheckCircle2, Save, Bike, Car } from 'lucide-react';
+import { Sliders, CheckCircle2, AlertCircle, Save, Bike, Car, Loader2 } from 'lucide-react';
 import { INITIAL_SERVICE_CATALOGUE, VehicleType } from '@10min-help/shared';
+import { adminApi } from '@/lib/api';
 
 export default function PricingCatalogueManagementPage() {
   const [services, setServices] = useState<any[]>(INITIAL_SERVICE_CATALOGUE);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadServices() {
+      try {
+        const res = await adminApi.listServices();
+        if (res.success && Array.isArray(res.data) && res.data.length > 0) {
+          // Merge API data with default catalog
+          const merged = INITIAL_SERVICE_CATALOGUE.map((def) => {
+            const apiMatch = res.data.find((item: any) => item.category === def.category);
+            if (apiMatch) {
+              return {
+                ...def,
+                _id: apiMatch._id,
+                startingPrice: {
+                  ...def.startingPrice,
+                  ...apiMatch.startingPrice,
+                },
+                isActive: apiMatch.isActive ?? true,
+              };
+            }
+            return def;
+          });
+          setServices(merged);
+        }
+      } catch (err) {
+        // Fall back gracefully to static catalogue
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    loadServices();
+  }, []);
 
   const handlePriceChange = (category: string, vehicle: VehicleType, newPrice: number) => {
     setServices((prev) =>
@@ -25,9 +61,23 @@ export default function PricingCatalogueManagementPage() {
     );
   };
 
-  const handleSaveAll = () => {
-    setSavedMessage('Pricing matrix updated across all dispatch endpoints.');
-    setTimeout(() => setSavedMessage(null), 4000);
+  const handleSaveAll = async () => {
+    setIsSaving(true);
+    setSavedMessage(null);
+    setErrorMessage(null);
+    try {
+      for (const svc of services) {
+        const idToUpdate = svc._id || svc.category;
+        await adminApi.updateServicePricing(idToUpdate, svc.startingPrice, svc.isActive ?? true);
+      }
+      setSavedMessage('Pricing matrix successfully updated in database and active across all dispatch endpoints.');
+      setTimeout(() => setSavedMessage(null), 5000);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to save pricing changes. Please check permissions and backend connection.');
+      setTimeout(() => setErrorMessage(null), 6000);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -44,10 +94,11 @@ export default function PricingCatalogueManagementPage() {
 
         <button
           onClick={handleSaveAll}
-          className="inline-flex items-center gap-2 bg-brand-500 hover:bg-brand-600 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs shadow-sm transition-all"
+          disabled={isSaving}
+          className="inline-flex items-center gap-2 bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs shadow-sm transition-all cursor-pointer"
         >
-          <Save className="w-4 h-4" />
-          <span>Save Pricing Changes</span>
+          {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          <span>{isSaving ? 'Saving Changes...' : 'Save Pricing Changes'}</span>
         </button>
       </div>
 
@@ -55,6 +106,13 @@ export default function PricingCatalogueManagementPage() {
         <div className="bg-emerald-50 text-emerald-800 p-3.5 rounded-2xl border border-emerald-200 text-xs font-semibold flex items-center gap-2">
           <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
           <span>{savedMessage}</span>
+        </div>
+      )}
+
+      {errorMessage && (
+        <div className="bg-rose-50 text-rose-800 p-3.5 rounded-2xl border border-rose-200 text-xs font-semibold flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+          <span>{errorMessage}</span>
         </div>
       )}
 

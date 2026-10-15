@@ -212,4 +212,59 @@ describe('Payment Edge Cases & Gateway Verification Unit Tests', () => {
       PaymentsService.handleRazorpayWebhook(rawBody, 'invalid_sig', { event: 'payment.captured' })
     ).rejects.toThrow('Invalid webhook signature');
   });
+
+  it('should reject payment verification if stored payment amount does not match required booking amount', async () => {
+    const bookingId = new mongoose.Types.ObjectId().toString();
+    const customerId = new mongoose.Types.ObjectId().toString();
+    const orderId = 'order_test_mismatch_1';
+    const paymentId = 'pay_test_mismatch_1';
+
+    jest.spyOn(BookingModel, 'findById').mockResolvedValue({
+      _id: bookingId,
+      customer: customerId,
+      quotedPrice: 599,
+    } as any);
+
+    const pendingPayment = {
+      _id: new mongoose.Types.ObjectId(),
+      booking: bookingId,
+      customer: customerId,
+      providerOrderId: orderId,
+      amount: 349,
+      status: PaymentStatus.PENDING,
+      save: jest.fn(),
+    };
+
+    jest.spyOn(PaymentModel, 'findOne')
+      .mockResolvedValueOnce(pendingPayment as any)
+      .mockResolvedValueOnce(null);
+
+    await expect(
+      PaymentsService.verifyPayment(
+        bookingId,
+        customerId,
+        orderId,
+        paymentId,
+        'valid_signature'
+      )
+    ).rejects.toThrow(/Payment amount mismatch/);
+  });
+
+  it('should reject cash payment recording by unverified technician', async () => {
+    const bookingId = new mongoose.Types.ObjectId().toString();
+    const techUserId = new mongoose.Types.ObjectId().toString();
+
+    const mockTech = {
+      _id: new mongoose.Types.ObjectId(),
+      user: techUserId,
+      verificationStatus: 'PENDING',
+    };
+
+    const { TechnicianModel } = require('../../src/models/Technician');
+    jest.spyOn(TechnicianModel, 'findOne').mockResolvedValue(mockTech as any);
+
+    await expect(
+      PaymentsService.recordCashPayment(bookingId, techUserId)
+    ).rejects.toThrow(/Only verified technicians are permitted to record cash payments/);
+  });
 });

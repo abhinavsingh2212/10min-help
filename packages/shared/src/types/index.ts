@@ -175,8 +175,8 @@ export interface OperationalMetricsDTO {
   completedBookings: number;
   activeBookings: number;
   cancelledBookings: number;
-  averageResponseTimeMinutes: number;
-  tenMinuteArrivalRatePercent: number;
+  averageResponseTimeMinutes: number | null;
+  tenMinuteArrivalRatePercent: number | null;
   activeAvailableMechanics: number;
   grossBookingValue: number;
   completedPaymentValue: number;

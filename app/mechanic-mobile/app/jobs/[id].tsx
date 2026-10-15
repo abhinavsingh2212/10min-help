@@ -43,11 +43,29 @@ export default function JobExecutionScreen() {
       });
       setJob(res.data);
       if (nextStatus === BookingStatus.COMPLETED) {
-        Alert.alert('Job Completed!', 'Great work! Job marked completed.');
-        router.replace('/(tabs)');
+        Alert.alert('Job Completed!', 'Repair marked as completed. Please collect payment if due.');
       }
     } catch (err: any) {
       Alert.alert('State Transition Error', err.message);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleRecordCashPayment = async () => {
+    setActionLoading(true);
+    try {
+      await mechanicApi('/payments/cash', {
+        method: 'POST',
+        body: JSON.stringify({
+          bookingId: id,
+          notes: 'Cash collected by mechanic upon repair completion',
+        }),
+      });
+      Alert.alert('Payment Recorded', `Cash payment of ₹${job.approvedFinalAmount || job.quotedPrice} successfully verified.`);
+      fetchJob();
+    } catch (err: any) {
+      Alert.alert('Payment Error', err.message);
     } finally {
       setActionLoading(false);
     }
@@ -244,9 +262,38 @@ export default function JobExecutionScreen() {
         )}
 
         {job.status === BookingStatus.COMPLETED && (
-          <View style={styles.completeBox}>
-            <CheckIcon size={24} color={THEME.colors.success} />
-            <Text style={styles.completeText}>Job has been successfully completed!</Text>
+          <View style={{ gap: 12 }}>
+            <View style={styles.completeBox}>
+              <CheckIcon size={24} color={THEME.colors.success} />
+              <Text style={styles.completeText}>Job has been successfully completed!</Text>
+            </View>
+
+            {job.paymentStatus !== 'PAID' && (
+              <View style={[styles.card, { backgroundColor: '#1E293B', borderColor: '#334155' }]}>
+                <Text style={{ color: '#FCD34D', fontWeight: '800', fontSize: 13, marginBottom: 4 }}>
+                  Cash Payment Collection Pending
+                </Text>
+                <Text style={{ color: '#94A3B8', fontSize: 12, marginBottom: 12 }}>
+                  Amount due: ₹{job.approvedFinalAmount || job.quotedPrice}. Collect cash from customer and record receipt below.
+                </Text>
+                <TouchableOpacity
+                  style={[styles.btnPrimary, { backgroundColor: '#10B981', marginTop: 0 }]}
+                  disabled={actionLoading}
+                  onPress={handleRecordCashPayment}
+                >
+                  <Text style={[styles.btnPrimaryText, { color: '#FFFFFF' }]}>
+                    {actionLoading ? 'Recording Payment...' : `Record ₹${job.approvedFinalAmount || job.quotedPrice} Cash Received`}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={styles.btnSecondary}
+              onPress={() => router.replace('/(tabs)')}
+            >
+              <Text style={styles.btnSecondaryText}>Return to Active Dashboard</Text>
+            </TouchableOpacity>
           </View>
         )}
       </View>
