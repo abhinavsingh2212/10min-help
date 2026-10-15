@@ -37,6 +37,8 @@ logs/
 .DS_Store
 Thumbs.db
 
-# IDEs
-.vscode/
-.idea/
+# Archives
+*.zip
+*.tar.gz
+*.tgz
+
