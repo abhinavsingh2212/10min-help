@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Alert, Modal } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Alert, Modal, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { mechanicApi } from '../../src/api';
 import { getMechanicSocket } from '../../src/socket';
@@ -10,39 +10,51 @@ import { THEME } from '../../src/theme';
 export default function MechanicDashboard() {
   const router = useRouter();
 
-  const [isOnline, setIsOnline] = useState(true);
+  // Start in safe offline/loading state
+  const [isOnline, setIsOnline] = useState(false);
   const [profile, setProfile] = useState<any>(null);
   const [activeJob, setActiveJob] = useState<any>(null);
   const [earnings, setEarnings] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // 15-Second Offer State
   const [incomingOffer, setIncomingOffer] = useState<any>(null);
   const [countdown, setCountdown] = useState(15);
+  const [respondingOffer, setRespondingOffer] = useState(false);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      setLoadError(null);
+      const [meRes, jobRes, earnRes] = await Promise.all([
+        mechanicApi('/technicians/me'),
+        mechanicApi('/technicians/active-job'),
+        mechanicApi('/technicians/earnings'),
+      ]);
+      setProfile(meRes.data);
+      setIsOnline(Boolean(meRes.data?.isOnline));
+      setActiveJob(jobRes.data);
+      setEarnings(earnRes.data);
+    } catch (err: any) {
+      setLoadError(err.message || 'Could not load technician telemetry data.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    async function load() {
-      try {
-        const [meRes, jobRes, earnRes] = await Promise.all([
-          mechanicApi('/technicians/me'),
-          mechanicApi('/technicians/active-job'),
-          mechanicApi('/technicians/earnings'),
-        ]);
-        setProfile(meRes.data);
-        setIsOnline(meRes.data?.isOnline || false);
-        setActiveJob(jobRes.data);
-        setEarnings(earnRes.data);
-      } catch (err) {
-        // default fallback
-      }
-    }
-
-    load();
+    loadData();
 
     // Socket listeners for offers
     const socket = getMechanicSocket();
     socket.on(SOCKET_EVENTS.BOOKING_OFFER, (offer) => {
       setIncomingOffer(offer);
-      setCountdown(15);
+      // Synchronize countdown with server expiration timestamp
+      const remainingSecs = offer?.expiresAt
+        ? Math.max(0, Math.floor((new Date(offer.expiresAt).getTime() - Date.now()) / 1000))
+        : 15;
+      setCountdown(remainingSecs);
     });
 
     return () => {
@@ -70,11 +82,15 @@ export default function MechanicDashboard() {
       });
       setIsOnline(value);
     } catch (err: any) {
-      Alert.alert('Status Error', err.message);
+      Alert.alert('Status Error', err.message || 'Failed to update duty availability.');
+      // Revert switch to match current state
+      setIsOnline(!value);
     }
   };
 
   const handleAcceptOffer = async () => {
+    if (respondingOffer || !incomingOffer) return;
+    setRespondingOffer(true);
     try {
       const res = await mechanicApi(`/dispatch/offers/${incomingOffer.offerId}/accept`, {
         method: 'POST',
@@ -83,25 +99,50 @@ export default function MechanicDashboard() {
       setIncomingOffer(null);
       router.push({ pathname: '/jobs/[id]', params: { id: acceptedBooking._id } });
     } catch (err: any) {
-      Alert.alert('Offer Missed', err.message);
+      Alert.alert('Offer Missed', err.message || 'Offer already claimed or expired.');
       setIncomingOffer(null);
+    } finally {
+      setRespondingOffer(false);
     }
   };
 
   const handleRejectOffer = async () => {
+    if (respondingOffer || !incomingOffer) return;
+    setRespondingOffer(true);
     try {
       await mechanicApi(`/dispatch/offers/${incomingOffer.offerId}/reject`, {
         method: 'POST',
-        body: JSON.stringify({ reason: 'Mechanic rejected offer' }),
+        body: JSON.stringify({ reason: 'Mechanic declined offer' }),
       });
       setIncomingOffer(null);
     } catch (err: any) {
       setIncomingOffer(null);
+    } finally {
+      setRespondingOffer(false);
     }
   };
 
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.center]}>
+        <ActivityIndicator size="large" color={THEME.colors.primary} />
+        <Text style={styles.loadingText}>Syncing Partner Console Telemetry...</Text>
+      </View>
+    );
+  }
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      {loadError && (
+        <View style={styles.errorBox}>
+          <AlertIcon size={16} color="#DC2626" />
+          <Text style={styles.errorText}>{loadError}</Text>
+          <TouchableOpacity onPress={loadData} style={styles.retryBtn}>
+            <Text style={styles.retryBtnText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Online Toggle Header */}
       <View style={styles.statusCard}>
         <View>
@@ -121,11 +162,21 @@ export default function MechanicDashboard() {
       {/* Verification Badge */}
       <View style={styles.badgeCard}>
         <View style={styles.badgeHeader}>
-          <ShieldIcon size={18} color={THEME.colors.success} />
-          <Text style={styles.badgeTitle}>Verified Partner Profile</Text>
+          <ShieldIcon
+            size={18}
+            color={profile?.verificationStatus === 'VERIFIED' ? THEME.colors.success : '#FCD34D'}
+          />
+          <Text style={styles.badgeTitle}>
+            {profile?.verificationStatus === 'VERIFIED'
+              ? 'Verified Partner Profile'
+              : `Verification: ${profile?.verificationStatus || 'PENDING'}`}
+          </Text>
         </View>
         <Text style={styles.badgeSubtitle}>
-          Skills: {profile?.skills?.join(', ') || 'Puncture, Jump Start, Towing, Mechanical Repair'}
+          Skills: {profile?.skills && profile.skills.length > 0 ? profile.skills.join(', ') : 'General Assistance'}
+        </Text>
+        <Text style={[styles.badgeSubtitle, { marginTop: 2 }]}>
+          Vehicles Serviced: {profile?.supportedVehicles && profile.supportedVehicles.length > 0 ? profile.supportedVehicles.join(', ') : 'BIKE, CAR'}
         </Text>
       </View>
 
@@ -133,12 +184,12 @@ export default function MechanicDashboard() {
       <View style={styles.metricsRow}>
         <View style={styles.metricBox}>
           <Text style={styles.metricLabel}>Today's Jobs</Text>
-          <Text style={styles.metricValue}>{earnings?.todayJobs || 0}</Text>
+          <Text style={styles.metricValue}>{earnings?.todayJobs ?? 0}</Text>
         </View>
         <View style={styles.metricBox}>
-          <Text style={styles.metricLabel}>Net Earnings</Text>
+          <Text style={styles.metricLabel}>Net Earnings (85%)</Text>
           <Text style={[styles.metricValue, { color: THEME.colors.success }]}>
-            ₹{earnings?.todayNetEarnings || 0}
+            ₹{earnings?.todayNetEarnings ?? 0}
           </Text>
         </View>
       </View>
@@ -180,28 +231,40 @@ export default function MechanicDashboard() {
               <Text style={styles.timerSub}>Offer Window Expiring</Text>
             </View>
 
-            <Text style={styles.offerTitle}>{incomingOffer?.serviceName}</Text>
-            <Text style={styles.offerVehicle}>Vehicle: {incomingOffer?.vehicleType}</Text>
+            <Text style={styles.offerTitle}>{incomingOffer?.serviceName || 'Emergency Assistance'}</Text>
+            <Text style={styles.offerVehicle}>Vehicle: {incomingOffer?.vehicleType || 'Vehicle'}</Text>
             <Text style={styles.offerDistance}>
-              Distance: ~{incomingOffer?.distanceKm} km (ETA: {incomingOffer?.estimatedEtaMinutes} mins)
+              Distance: ~{incomingOffer?.distanceKm || '1.5'} km (ETA: {incomingOffer?.estimatedEtaMinutes || 10} mins)
             </Text>
             <Text style={styles.offerLocation}>
-              Location: {incomingOffer?.customerAddress}
+              Location: {incomingOffer?.customerAddress || 'Customer Breakdown Location'}
             </Text>
 
             <View style={styles.earningsBox}>
-              <Text style={styles.earningLabel}>Estimated Job Earnings (85%)</Text>
+              <Text style={styles.earningLabel}>Estimated Net Payout (85%)</Text>
               <Text style={styles.earningValue}>
-                ₹{Math.round((incomingOffer?.quotedPrice || 120) * 0.85)}
+                ₹{Math.round((incomingOffer?.quotedPrice || 249) * 0.85)}
               </Text>
             </View>
 
             <View style={styles.modalActionRow}>
-              <TouchableOpacity style={styles.rejectBtn} onPress={handleRejectOffer}>
+              <TouchableOpacity
+                style={[styles.rejectBtn, respondingOffer && { opacity: 0.5 }]}
+                disabled={respondingOffer}
+                onPress={handleRejectOffer}
+              >
                 <Text style={styles.rejectBtnText}>Decline</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.acceptBtn} onPress={handleAcceptOffer}>
-                <Text style={styles.acceptBtnText}>Accept Job</Text>
+              <TouchableOpacity
+                style={[styles.acceptBtn, respondingOffer && { opacity: 0.5 }]}
+                disabled={respondingOffer}
+                onPress={handleAcceptOffer}
+              >
+                {respondingOffer ? (
+                  <ActivityIndicator size="small" color={THEME.colors.secondary} />
+                ) : (
+                  <Text style={styles.acceptBtnText}>Accept Job</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -213,6 +276,22 @@ export default function MechanicDashboard() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: THEME.colors.background },
+  center: { justifyContent: 'center', alignItems: 'center' },
+  loadingText: { marginTop: 12, color: THEME.colors.textMuted, fontSize: 13, fontWeight: '600' },
+  errorBox: {
+    backgroundColor: '#FEE2E2',
+    padding: 12,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#F87171',
+  },
+  errorText: { color: '#991B1B', fontSize: 12, flex: 1, fontWeight: '600' },
+  retryBtn: { paddingHorizontal: 10, paddingVertical: 4, backgroundColor: '#EF4444', borderRadius: 6 },
+  retryBtnText: { color: '#FFFFFF', fontSize: 11, fontWeight: '800' },
   content: { padding: 16 },
   statusCard: { backgroundColor: THEME.colors.surface, padding: 20, borderRadius: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, borderWidth: 1, borderColor: THEME.colors.border },
   statusTitle: { fontSize: 16, fontWeight: '900', color: THEME.colors.textMain },

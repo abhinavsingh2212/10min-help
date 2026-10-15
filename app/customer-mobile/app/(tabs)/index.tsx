@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Linking } from 'react-native';
 import { useRouter } from 'expo-router';
 import { INITIAL_SERVICE_CATALOGUE, VehicleType } from '@10min-help/shared';
 import { RadarMapView } from '../../src/components/RadarMapView';
@@ -11,12 +11,20 @@ export default function HomeScreen() {
   const [vehicle, setVehicle] = useState<VehicleType>(VehicleType.BIKE);
 
   const handleSosCall = () => {
+    const hotline = 'tel:1800101010';
     Alert.alert(
       '24x7 Roadside Emergency Desk',
-      'Calling 1800-10-HELP (1800-101010). Dispatches immediate safety supervisor to your GPS coordinates.',
+      'Call emergency helpline 1800-101010 for immediate operator assistance?',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Call Helpline', onPress: () => {} },
+        {
+          text: 'Call Helpline',
+          onPress: () => {
+            Linking.openURL(hotline).catch(() => {
+              Alert.alert('Call Failed', 'Could not open telephone dialer on this device.');
+            });
+          },
+        },
       ]
     );
   };
@@ -24,7 +32,7 @@ export default function HomeScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {/* Interactive Live Radar Telemetry */}
-      <RadarMapView statusText="Live Radar • 3 Verified Mechanics Active" />
+      <RadarMapView statusText="Live Radar • GPS Telemetry Standby" />
 
       {/* Target Arrival Banner */}
       <View style={styles.targetBanner}>
@@ -34,7 +42,7 @@ export default function HomeScreen() {
         </View>
         <Text style={styles.bannerTitle}>We reach. You relax.</Text>
         <Text style={styles.bannerSubtitle}>
-          Verified mobile technicians stationed across Indiranagar, Koramangala, and HSR.
+          Rapid 15-second dispatch matching to certified technicians across pilot zones.
         </Text>
       </View>
 

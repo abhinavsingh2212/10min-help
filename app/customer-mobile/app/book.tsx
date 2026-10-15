@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { mobileApi } from '../src/api';
@@ -19,43 +19,140 @@ export default function BookScreen() {
     INITIAL_SERVICE_CATALOGUE.find((s) => s.category === initialCategory) || INITIAL_SERVICE_CATALOGUE[0]
   );
 
-  const [address, setAddress] = useState('100ft Road, Indiranagar, Bengaluru');
+  // Real location state (no hardcoded default)
+  const [address, setAddress] = useState('');
+  const [coordinates, setCoordinates] = useState<{ latitude: number; longitude: number }>({
+    latitude: 12.9716,
+    longitude: 77.5946,
+  });
+  const [detectingGps, setDetectingGps] = useState(false);
+  const [gpsDetected, setGpsDetected] = useState(false);
+
+  // Real customer vehicles (no fake auto-creation)
+  const [savedVehicles, setSavedVehicles] = useState<any[]>([]);
+  const [selectedVehicleId, setSelectedVehicleId] = useState<string>('');
+  const [isAddingNewVehicle, setIsAddingNewVehicle] = useState(false);
+  const [newManufacturer, setNewManufacturer] = useState('');
+  const [newModel, setNewModel] = useState('');
+  const [newRegNumber, setNewRegNumber] = useState('');
+
+  const [loadingVehicles, setLoadingVehicles] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
+  useEffect(() => {
+    async function loadVehicles() {
+      try {
+        setLoadingVehicles(true);
+        const res = await mobileApi('/vehicles');
+        const list = res.data || [];
+        setSavedVehicles(list);
+        const matching = list.filter((v: any) => v.vehicleType === vehicleType);
+        if (matching.length > 0) {
+          setSelectedVehicleId(matching[0]._id);
+          setIsAddingNewVehicle(false);
+        } else {
+          setSelectedVehicleId('');
+          setIsAddingNewVehicle(true);
+        }
+      } catch (err) {
+        setIsAddingNewVehicle(true);
+      } finally {
+        setLoadingVehicles(false);
+      }
+    }
+    loadVehicles();
+  }, [vehicleType]);
+
+  const handleDetectLocation = () => {
+    if (typeof navigator !== 'undefined' && navigator.geolocation) {
+      setDetectingGps(true);
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setCoordinates({
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+          });
+          setGpsDetected(true);
+          setDetectingGps(false);
+          if (!address) {
+            setAddress(`GPS: ${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)} (Confirm street/landmark below)`);
+          }
+        },
+        (err) => {
+          setDetectingGps(false);
+          Alert.alert(
+            'GPS Location Permission',
+            'Could not retrieve live GPS coordinates. Please enter your street address or landmark manually.'
+          );
+        },
+        { enableHighAccuracy: true, timeout: 8000 }
+      );
+    } else {
+      Alert.alert(
+        'Manual Entry',
+        'Device geolocation is not available. Please type your breakdown address or nearest landmark.'
+      );
+    }
+  };
+
   const handleConfirmBooking = async () => {
+    // 1. Validate Location
+    if (!address.trim() || address.trim().length < 5) {
+      Alert.alert('Location Required', 'Please enter your breakdown street address, building, or landmark.');
+      return;
+    }
+
     setSubmitting(true);
     try {
-      // 1. Get or create vehicle
-      const vRes = await mobileApi('/vehicles');
-      let vehicleId = vRes.data?.[0]?._id;
-      if (!vehicleId) {
-        const createV = await mobileApi('/vehicles', {
+      // 2. Validate / Resolve Vehicle
+      let effectiveVehicleId = selectedVehicleId;
+
+      if (isAddingNewVehicle || !effectiveVehicleId) {
+        const cleanMake = newManufacturer.trim();
+        const cleanModel = newModel.trim();
+        const cleanReg = newRegNumber.trim().toUpperCase();
+
+        if (!cleanMake || !cleanModel || !cleanReg) {
+          Alert.alert(
+            'Vehicle Details Required',
+            'Please enter the vehicle manufacturer (make), model, and registration plate number.'
+          );
+          setSubmitting(false);
+          return;
+        }
+
+        const createRes = await mobileApi('/vehicles', {
           method: 'POST',
           body: JSON.stringify({
             vehicleType,
-            manufacturer: vehicleType === VehicleType.CAR ? 'Maruti Suzuki' : 'Royal Enfield',
-            model: vehicleType === VehicleType.CAR ? 'Swift Dzire' : 'Classic 350',
-            registrationNumber: 'KA01AB1234',
+            manufacturer: cleanMake,
+            model: cleanModel,
+            registrationNumber: cleanReg,
           }),
         });
-        vehicleId = createV.data._id;
+
+        effectiveVehicleId = createRes.data._id;
       }
 
-      // 2. Fetch service ID matching category & vehicle
+      // 3. Resolve Service ID
       const sRes = await mobileApi(`/services?vehicleType=${vehicleType}`);
       const matched = sRes.data?.find((s: any) => s.category === selectedService.category);
       const serviceId = matched?._id || sRes.data?.[0]?._id;
 
-      // 3. Create booking
+      if (!serviceId) {
+        throw new Error('Service category is currently unavailable for this vehicle type.');
+      }
+
+      // 4. Create Dispatch Booking
       const bookRes = await mobileApi('/bookings', {
         method: 'POST',
         body: JSON.stringify({
-          vehicleId,
+          vehicleId: effectiveVehicleId,
           serviceId,
           pickupLocation: {
-            latitude: 12.9784,
-            longitude: 77.6408,
-            address,
+            latitude: coordinates.latitude,
+            longitude: coordinates.longitude,
+            address: address.trim(),
           },
         }),
       });
@@ -72,6 +169,7 @@ export default function BookScreen() {
   };
 
   const currentPrice = selectedService.startingPrice[vehicleType];
+  const matchingSavedVehicles = savedVehicles.filter((v: any) => v.vehicleType === vehicleType);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -101,6 +199,71 @@ export default function BookScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Vehicle Selection or Form */}
+      <Text style={styles.sectionLabel}>Your Breakdown Vehicle</Text>
+      {loadingVehicles ? (
+        <ActivityIndicator color={THEME.colors.primary} style={{ marginVertical: 12 }} />
+      ) : (
+        <View style={styles.vehicleSelectContainer}>
+          {matchingSavedVehicles.length > 0 && !isAddingNewVehicle ? (
+            <View style={{ gap: 8 }}>
+              {matchingSavedVehicles.map((v: any) => (
+                <TouchableOpacity
+                  key={v._id}
+                  style={[styles.vehicleCardOption, selectedVehicleId === v._id && styles.vehicleCardOptionActive]}
+                  onPress={() => setSelectedVehicleId(v._id)}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.vehicleCardTitle}>{v.manufacturer} {v.model}</Text>
+                    <Text style={styles.vehicleCardReg}>{v.registrationNumber}</Text>
+                  </View>
+                  {selectedVehicleId === v._id && <CheckIcon size={16} color={THEME.colors.primaryDark} />}
+                </TouchableOpacity>
+              ))}
+              <TouchableOpacity
+                onPress={() => setIsAddingNewVehicle(true)}
+                style={styles.addNewVehicleBtn}
+              >
+                <Text style={styles.addNewVehicleBtnText}>+ Add Another Vehicle</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.vehicleForm}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <Text style={styles.formTitle}>Enter Vehicle Details</Text>
+                {matchingSavedVehicles.length > 0 && (
+                  <TouchableOpacity onPress={() => setIsAddingNewVehicle(false)}>
+                    <Text style={{ fontSize: 12, color: THEME.colors.primaryDark, fontWeight: '700' }}>Choose Saved</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              <TextInput
+                style={styles.formInput}
+                placeholder="Manufacturer (e.g. Honda, Maruti Suzuki, Hyundai)"
+                placeholderTextColor="#94A3B8"
+                value={newManufacturer}
+                onChangeText={setNewManufacturer}
+              />
+              <TextInput
+                style={styles.formInput}
+                placeholder="Model (e.g. Activa 6G, Swift, Creta)"
+                placeholderTextColor="#94A3B8"
+                value={newModel}
+                onChangeText={setNewModel}
+              />
+              <TextInput
+                style={styles.formInput}
+                placeholder="Registration Plate Number (e.g. KA01AB1234)"
+                placeholderTextColor="#94A3B8"
+                autoCapitalize="characters"
+                value={newRegNumber}
+                onChangeText={setNewRegNumber}
+              />
+            </View>
+          )}
+        </View>
+      )}
+
       {/* Service Selection */}
       <Text style={styles.sectionLabel}>Select Breakdown Assistance Type</Text>
       <View style={styles.serviceList}>
@@ -129,7 +292,23 @@ export default function BookScreen() {
       </View>
 
       {/* Breakdown Location */}
-      <Text style={styles.sectionLabel}>Breakdown Location</Text>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, marginBottom: 8 }}>
+        <Text style={[styles.sectionLabel, { marginTop: 0, marginBottom: 0 }]}>Breakdown Location</Text>
+        <TouchableOpacity
+          onPress={handleDetectLocation}
+          disabled={detectingGps}
+          style={styles.gpsDetectBtn}
+        >
+          {detectingGps ? (
+            <ActivityIndicator size="small" color={THEME.colors.primaryDark} />
+          ) : (
+            <Text style={styles.gpsDetectBtnText}>
+              {gpsDetected ? '✓ GPS Locked' : '📍 Use Current GPS'}
+            </Text>
+          )}
+        </TouchableOpacity>
+      </View>
+
       <View style={styles.inputContainer}>
         <MapPinIcon size={18} color={THEME.colors.primary} />
         <TextInput
@@ -160,7 +339,7 @@ export default function BookScreen() {
           <ActivityIndicator color={THEME.colors.secondary} />
         ) : (
           <Text style={styles.dispatchButtonText}>
-            Confirm & Dispatch Now • ₹{currentPrice}
+            Confirm &amp; Dispatch Now • ₹{currentPrice}
           </Text>
         )}
       </TouchableOpacity>
@@ -189,6 +368,41 @@ const styles = StyleSheet.create({
   vehicleBtnActive: { backgroundColor: THEME.colors.primary, borderColor: THEME.colors.primary },
   vehicleBtnText: { fontSize: 12, fontWeight: '700', color: THEME.colors.textMuted },
   vehicleBtnTextActive: { color: THEME.colors.secondary, fontWeight: '900' },
+  vehicleSelectContainer: { marginBottom: 16 },
+  vehicleCardOption: {
+    backgroundColor: '#FFFFFF',
+    padding: 14,
+    borderRadius: THEME.radius.md,
+    borderWidth: 1,
+    borderColor: THEME.colors.border,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  vehicleCardOptionActive: { borderColor: THEME.colors.primary, backgroundColor: THEME.colors.primaryLight },
+  vehicleCardTitle: { fontSize: 14, fontWeight: '800', color: THEME.colors.textMain },
+  vehicleCardReg: { fontSize: 12, color: THEME.colors.textMuted, marginTop: 2, fontFamily: 'monospace' },
+  addNewVehicleBtn: { paddingVertical: 8, alignItems: 'center' },
+  addNewVehicleBtnText: { fontSize: 12, color: THEME.colors.primaryDark, fontWeight: '800' },
+  vehicleForm: {
+    backgroundColor: '#FFFFFF',
+    padding: 14,
+    borderRadius: THEME.radius.md,
+    borderWidth: 1,
+    borderColor: THEME.colors.border,
+    gap: 8,
+  },
+  formTitle: { fontSize: 12, fontWeight: '800', color: THEME.colors.textMuted, textTransform: 'uppercase' },
+  formInput: {
+    borderWidth: 1,
+    borderColor: THEME.colors.border,
+    borderRadius: THEME.radius.sm,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 13,
+    color: THEME.colors.textMain,
+    backgroundColor: '#F8FAFC',
+  },
   serviceList: { gap: 8, marginBottom: 16 },
   serviceOption: {
     backgroundColor: '#FFFFFF',
@@ -209,6 +423,15 @@ const styles = StyleSheet.create({
   serviceDesc: { fontSize: 12, color: THEME.colors.textMuted, marginTop: 4, lineHeight: 16 },
   priceContainer: { alignItems: 'flex-end' },
   servicePrice: { fontSize: 18, fontWeight: '900', color: THEME.colors.textMain },
+  gpsDetectBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    backgroundColor: THEME.colors.primaryLight,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+  },
+  gpsDetectBtnText: { fontSize: 11, fontWeight: '800', color: '#92400E' },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',

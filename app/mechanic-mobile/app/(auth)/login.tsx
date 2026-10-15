@@ -31,9 +31,12 @@ export default function MechanicLoginScreen() {
         method: 'POST',
         body: JSON.stringify({ phone: cleanPhone, role: 'TECHNICIAN' }),
       });
-      const receivedOtp = res.data?.devOtp || '123456';
-      setOtp(receivedOtp);
-      setDevOtpNotice(`OTP Sent: ${receivedOtp} (Auto-filled for instant verification)`);
+      setOtp('');
+      if (res.data?.devOtp) {
+        setDevOtpNotice(`Dev Environment OTP: ${res.data.devOtp}`);
+      } else {
+        setDevOtpNotice(null);
+      }
       setStep('OTP');
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Could not send verification OTP.');

@@ -173,6 +173,55 @@ export function initializeSockets(httpServer: HttpServer): SocketIOServer {
       }
     });
 
+    // Real-time location stream from authenticated technician
+    socket.on(
+      'technician:location',
+      async (
+        payload: { latitude?: number; longitude?: number; heading?: number; address?: string } | undefined,
+        callback?: (res: { success: boolean; error?: string }) => void
+      ) => {
+        try {
+          if (user?.role !== UserRole.TECHNICIAN || !socket.data.technicianId) {
+            socket.emit('socket:error', {
+              code: 'FORBIDDEN',
+              message: 'Only technicians may broadcast location telemetry.',
+            });
+            if (typeof callback === 'function') callback({ success: false, error: 'FORBIDDEN' });
+            return;
+          }
+
+          if (
+            typeof payload?.latitude !== 'number' ||
+            typeof payload?.longitude !== 'number' ||
+            payload.latitude < -90 ||
+            payload.latitude > 90 ||
+            payload.longitude < -180 ||
+            payload.longitude > 180
+          ) {
+            socket.emit('socket:error', {
+              code: 'INVALID_COORDINATES',
+              message: 'Valid numeric latitude and longitude coordinates are required.',
+            });
+            if (typeof callback === 'function') callback({ success: false, error: 'INVALID_COORDINATES' });
+            return;
+          }
+
+          const { TrackingService } = await import('../modules/tracking/tracking.service');
+          await TrackingService.updateLocation(user.userId, {
+            latitude: payload.latitude,
+            longitude: payload.longitude,
+            heading: payload.heading,
+            address: payload.address,
+          });
+
+          if (typeof callback === 'function') callback({ success: true });
+        } catch (err: any) {
+          logger.error(`[Sockets] Error updating technician location via socket: ${err.message}`);
+          if (typeof callback === 'function') callback({ success: false, error: err.message });
+        }
+      }
+    );
+
     socket.on('disconnect', (reason) => {
       logger.info(`[Sockets] Client disconnected: ${socket.id} (${reason})`);
     });

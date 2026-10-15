@@ -155,7 +155,7 @@ export default function AdminDashboardPage() {
           </div>
           <div>
             <div className="text-3xl font-black text-slate-900">
-              {metrics?.activeAvailableMechanics || 2}
+              {metrics?.activeAvailableMechanics ?? 0}
             </div>
             <div className="text-[11px] text-emerald-600 font-semibold mt-1">
               Ready for 15s instant offer match
